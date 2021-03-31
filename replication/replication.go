@@ -69,9 +69,10 @@ func fetchKeys(db *db.Database, masterAddress string) (keyfound bool, err error)
 	}
 
 	if err := deleteKeyFromReplicationQueue(string(response.Key), string(response.Value), masterAddress); err != nil {
-		log.Printf("delete key from replica failed: %v", err)
+		log.Printf("delete key from replica queue failed: %v", err)
 	}
 
+	//change to true
 	return false, nil
 }
 
@@ -79,7 +80,7 @@ func deleteKeyFromReplicationQueue(key string, value string, masterAddress strin
 
 	var url string = "http://" + masterAddress + "/deleteKeyFRQ?" + "key=" + key + "&value=" + value
 
-	log.Printf("deleting key %v with value %v on server %v", key, value, masterAddress)
+	log.Printf("deleting key %v with value %v on server %v from replication.go", key, value, masterAddress)
 
 	resp, err := http.Get(url)
 

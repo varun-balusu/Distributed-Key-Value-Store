@@ -144,7 +144,7 @@ func (d *Database) SetReplicationKey(key string, value []byte) error {
 
 // GetKey jdjioksjc
 func (d *Database) GetKey(key string) (value []byte, err error) {
-
+	log.Println(key)
 	rollbackError := d.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket(theDefaultBucket)
 		v := b.Get([]byte(key))
@@ -195,9 +195,19 @@ func (d *Database) DeleteKeyFromReplicationQueue(key []byte, value []byte) (err 
 }
 
 // DeleteKey deletes a key from the current bucket
-func (d *Database) DeleteReplicaKey(key string) (err error) {
+func (d *Database) DeleteReplicaKey(key string, value []byte) (err error) {
 	rollbackError := d.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket(theDefaultBucket)
+
+		v := b.Get([]byte(key))
+
+		if !bytes.Equal(v, value) {
+			return nil
+		}
+
+		if v == nil {
+			return nil
+		}
 
 		deleteError := b.Delete([]byte(key))
 
@@ -214,7 +224,7 @@ func (d *Database) DeleteReplicaKey(key string) (err error) {
 //bih yah
 func (d *Database) DeleteKeyFromDeletionQueue(key []byte, value []byte) (err error) {
 	rollbackError := d.db.Update(func(tx *bolt.Tx) error {
-		r := tx.Bucket(replicationBucket)
+		r := tx.Bucket(deletionBucket)
 		v := r.Get(key)
 
 		//key already deleted from replication queue and changes applied to replica
@@ -223,7 +233,7 @@ func (d *Database) DeleteKeyFromDeletionQueue(key []byte, value []byte) (err err
 		}
 
 		if !bytes.Equal(value, v) {
-			return errors.New("Cannot delete key from replication queue while changes are in flight")
+			return errors.New("Cannot delete key from deletion queue while changes are in flight")
 		}
 
 		if err := r.Delete(key); err != nil {
@@ -246,7 +256,7 @@ func (d *Database) DeletionQueueHead() (key []byte, value []byte, err error) {
 		copy(value, v)
 		return nil
 	})
-	log.Println(key)
+	// log.Printf("Deletion queue head is %v", key)
 	return key, value, err
 }
 

@@ -172,3 +172,19 @@ func (s *Server) HandleDeleteKeyFromReplicationQueue(res http.ResponseWriter, re
 
 	fmt.Fprintf(res, "ok")
 }
+
+func (s *Server) HandleDeleteKeyFromDeletionQueue(res http.ResponseWriter, req *http.Request) {
+	req.ParseForm()
+	key := req.FormValue("key")
+	value := req.Form.Get("value")
+
+	err := s.db.DeleteKeyFromDeletionQueue([]byte(key), []byte(value))
+
+	if err != nil {
+		res.WriteHeader(500)
+		fmt.Fprintf(res, "error: %v", err)
+		return
+	}
+
+	fmt.Fprintf(res, "ok")
+}

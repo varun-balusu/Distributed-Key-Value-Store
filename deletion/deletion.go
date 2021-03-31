@@ -21,7 +21,7 @@ func KeyDeletionLoop(db *db.Database, masterAddress string) {
 
 	for {
 
-		keyfound, err := fetchKeys(db, masterAddress)
+		keyfound, err := deleteKeys(db, masterAddress)
 
 		if err != nil {
 			log.Printf("Error deleting keys: %v", err)
@@ -36,32 +36,48 @@ func KeyDeletionLoop(db *db.Database, masterAddress string) {
 	}
 }
 
-func deleteKeys(db *db.Database, masterAddress string) (err error) {
+func deleteKeys(db *db.Database, masterAddress string) (keyFound bool, err error) {
 	var url string = "http://" + masterAddress + "/getDeletionHead"
 
 	resp, err := http.Get(url)
 
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	var response KeyValuePair
 
 	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
-		return err
+		return false, err
 	}
 
 	if response.Err != nil {
-		return err
+		return false, err
 	}
+
+	if response.Key == "" {
+		return false, nil
+	}
+
+	if err := db.DeleteReplicaKey(response.Key, []byte(response.Value)); err != nil {
+		return false, nil
+	}
+	// v, err := db.GetKey(response.Key)
+
+	if err := deleteKeyFromDeletionQueue(string(response.Key), string(response.Value), masterAddress); err != nil {
+		log.Printf("delete key from deletion queue failed: %v", err)
+	}
+
+	//change to true
+	return false, nil
 
 }
 
-func deleteKeyFromReplicationQueue(key string, value string, masterAddress string) (err error) {
+func deleteKeyFromDeletionQueue(key string, value string, masterAddress string) (err error) {
 
-	var url string = "http://" + masterAddress + "/deleteKeyFRQ?" + "key=" + key + "&value=" + value
+	var url string = "http://" + masterAddress + "/deleteKeyFDQ?" + "key=" + key + "&value=" + value
 
-	log.Printf("deleting key %v with value %v on server %v", key, value, masterAddress)
+	log.Printf("deleting key %v with value %v on server %v from deletion.go", key, value, masterAddress)
 
 	resp, err := http.Get(url)
 

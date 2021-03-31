@@ -3,6 +3,7 @@ package main
 import (
 	"distribkv/usr/distributedkv/config"
 	"distribkv/usr/distributedkv/db"
+	"distribkv/usr/distributedkv/deletion"
 	"distribkv/usr/distributedkv/replication"
 	"distribkv/usr/distributedkv/resharder"
 	"distribkv/usr/distributedkv/web"
@@ -103,6 +104,7 @@ func main() {
 		}
 
 		go replication.KeyDownloadLoop(db, masterAddress)
+		go deletion.KeyDeletionLoop(db, masterAddress)
 	}
 
 	log.Printf("Current shard is %q and shard index is %v and total shard count is %v", *shard, shardIndex, shardCount)
@@ -120,6 +122,8 @@ func main() {
 	http.HandleFunc("/getReplicationHead", srv.HandleReplicationQueueHead)
 
 	http.HandleFunc("/deleteKeyFRQ", srv.HandleDeleteKeyFromReplicationQueue)
+
+	http.HandleFunc("/deleteKeyFDQ", srv.HandleDeleteKeyFromDeletionQueue)
 
 	http.HandleFunc("/getDeletionHead", srv.HandleDeletionQueueHead)
 
