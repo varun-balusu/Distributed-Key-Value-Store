@@ -11,16 +11,20 @@ sleep 0.1
 
 go install distribkv/usr/distributedkv
 
-distributedkv -db-location=/Users/vbalusu/desktop/distribkv/server-0.db -http-address=127.0.0.1:8080 -shard=Server-0 &
+PATH=$PATH:$(dirname $(go list -f '{{.Target}}' .))
 
-P1=$!
+distributedkv -db-location=/Users/vbalusu/desktop/distribkv/server-0.db -http-address=127.0.0.1:8080 -shard=server-0 &
 
-distributedkv -db-location=/Users/vbalusu/desktop/distribkv/server-1.db -http-address=127.0.0.1:8081 -shard=Server-1 &
+distributedkv -db-location=/Users/vbalusu/desktop/distribkv/server-0-r.db -http-address=127.0.0.2:8080 -shard=server-0 -replica &
 
-P2=$!
+distributedkv -db-location=/Users/vbalusu/desktop/distribkv/server-1.db -http-address=127.0.0.1:8081 -shard=server-1 &
 
-distributedkv -db-location=/Users/vbalusu/desktop/distribkv/server-2.db -http-address=127.0.0.1:8082 -shard=Server-2 &
+distributedkv -db-location=/Users/vbalusu/desktop/distribkv/server-1-r.db -http-address=127.0.0.2:8081 -shard=server-1 -replica &
 
-P3=$!
+# distributedkv -db-location=/Users/vbalusu/desktop/distribkv/server-2.db -http-address=127.0.0.1:8082 -shard=server-2 &
 
-wait $P1 $P2 $P3
+
+# distributedkv -db-location=/Users/vbalusu/desktop/distribkv/server-3.db -http-address=127.0.0.1:8083 -shard=server-3 &
+
+
+wait
