@@ -2,10 +2,10 @@
 name = "server-0"
 index = 0
 address = "127.0.0.1:8080"
-replicas = ["127.0.0.2:8080"]
+replicas = ["127.0.0.2:8080", "127.0.0.3:8080"]
 
-[[shards]]
-name = "server-1"
-index = 1
-address = "127.0.0.1:8081"
-replicas = ["127.0.0.2:8081"]
+# [[shards]]
+# name = "server-1"
+# index = 1
+# address = "127.0.0.1:8081"
+# replicas = ["127.0.0.2:8081"]

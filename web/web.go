@@ -7,7 +7,10 @@ import (
 	"fmt"
 	"hash/fnv"
 	"io"
+	"io/ioutil"
+	"log"
 	"net/http"
+	"sync"
 )
 
 // Server contains a databse
@@ -16,12 +19,22 @@ type Server struct {
 	shardIndex int
 	shardCount int
 	addressMap map[int]string
+	replicaArr []string
+}
+
+type ValueObject struct {
+	Value string
 }
 
 // NewServer is the constructer for thr Server
-func NewServer(db *db.Database, shardIndex int, shardCount int, addressMap map[int]string) (srv *Server) {
+func NewServer(db *db.Database, shardIndex int, shardCount int, addressMap map[int]string, replicaArr []string) (srv *Server) {
+	if replicaArr != nil {
+		for i := 0; i < len(replicaArr); i++ {
+			log.Printf("current shardIndex is %v and shard replica is at %v", shardIndex, replicaArr[i])
+		}
+	}
 
-	srv = &Server{db: db, shardIndex: shardIndex, shardCount: shardCount, addressMap: addressMap}
+	srv = &Server{db: db, shardIndex: shardIndex, shardCount: shardCount, addressMap: addressMap, replicaArr: replicaArr}
 
 	return srv
 }
@@ -29,8 +42,11 @@ func NewServer(db *db.Database, shardIndex int, shardCount int, addressMap map[i
 // HandleGet is an exported function that handles get requests
 func (s *Server) HandleGet(res http.ResponseWriter, req *http.Request) {
 	req.ParseForm()
+	// enc := json.NewEncoder(res)
 
 	key := req.Form.Get("key")
+
+	// var value string
 
 	hash := fnv.New64()
 
@@ -41,9 +57,20 @@ func (s *Server) HandleGet(res http.ResponseWriter, req *http.Request) {
 	if s.shardIndex != shardIdx {
 		s.redirectRequest(res, req, shardIdx)
 	} else {
-		value, err := s.db.GetKey(key)
-		fmt.Fprintf(res, "Called get and got value: %q and error: %v\n", value, err)
+		v, _ := s.db.GetKey(key)
+
+		value := string(v)
+		//return just the value or the error encoded object
+		fmt.Fprintf(res, value)
+		// if err != nil {
+		// 	fmt.Fprintf(res, string(v))
+		// }
+
 	}
+
+	// enc.Encode(&ValueObject{
+	// 	Value: value,
+	// })
 
 }
 
@@ -161,17 +188,55 @@ func (s *Server) HandleDeleteKeyFromReplicationQueue(res http.ResponseWriter, re
 	req.ParseForm()
 	key := req.FormValue("key")
 	value := req.Form.Get("value")
+	var numValidResponses int = 0
+	// log.Printf("value to match is %v", value)
+	var wg sync.WaitGroup
 
-	err := s.db.DeleteKeyFromReplicationQueue([]byte(key), []byte(value))
+	for i := 0; i < len(s.replicaArr); i++ {
+		var url string = "http://" + s.replicaArr[i] + "/get?key=" + key
+		// fmt.Printf("calling get to %v\n", url)
+		wg.Add(1)
+		go func(url string, value string) {
+			resp, err := http.Get(url)
+			if err != nil {
+				fmt.Fprintf(res, "error: %v", err)
+			}
 
-	if err != nil {
-		res.WriteHeader(500)
-		fmt.Fprintf(res, "error: %v", err)
-		return
+			v, err := ioutil.ReadAll(resp.Body)
+			// log.Printf("value from replica url %v is %v", url, string(v))
+			if err != nil {
+				fmt.Fprintf(res, "error: %v", err)
+			}
+
+			if string(v) == value {
+				numValidResponses++
+			}
+
+			wg.Done()
+		}(url, value)
 	}
 
-	fmt.Fprintf(res, "ok")
+	wg.Wait()
+
+	// log.Printf("number of valid responses %d\n", numValidResponses)
+	if numValidResponses == len(s.replicaArr) {
+		err := s.db.DeleteKeyFromReplicationQueue([]byte(key), []byte(value))
+		if err != nil {
+			res.WriteHeader(500)
+			fmt.Fprintf(res, "error: %v", err)
+			return
+		}
+		fmt.Fprintf(res, "ok")
+	}
+
 }
+
+// func (s *Server) FetchStatus(res http.ResponseWriter, req *http.Request) {
+// 	req.ParseForm()
+// 	key := req.FormValue("key")
+// 	value := req.Form.Get("value")
+
+// }
 
 func (s *Server) HandleDeleteKeyFromDeletionQueue(res http.ResponseWriter, req *http.Request) {
 	req.ParseForm()

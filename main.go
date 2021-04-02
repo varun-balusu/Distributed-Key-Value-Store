@@ -75,9 +75,13 @@ func main() {
 
 	var addressMap = make(map[int]string)
 
+	var replicaMap = make(map[int][]string)
+
 	for _, s := range config.Shards {
 
 		addressMap[s.Index] = s.Address
+
+		replicaMap[s.Index] = s.Replicas
 
 		if s.Name == *shard {
 
@@ -108,8 +112,12 @@ func main() {
 	}
 
 	log.Printf("Current shard is %q and shard index is %v and total shard count is %v", *shard, shardIndex, shardCount)
-
-	srv := web.NewServer(db, shardIndex, shardCount, addressMap)
+	var srv *web.Server
+	if !*replica {
+		srv = web.NewServer(db, shardIndex, shardCount, addressMap, replicaMap[shardIndex])
+	} else {
+		srv = web.NewServer(db, shardIndex, shardCount, addressMap, nil)
+	}
 
 	http.HandleFunc("/get", srv.HandleGet)
 
