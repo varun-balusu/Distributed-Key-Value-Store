@@ -3,7 +3,6 @@ package main
 import (
 	"distribkv/usr/distributedkv/config"
 	"distribkv/usr/distributedkv/db"
-	"distribkv/usr/distributedkv/deletion"
 	"distribkv/usr/distributedkv/replication"
 	"distribkv/usr/distributedkv/resharder"
 	"distribkv/usr/distributedkv/web"
@@ -56,13 +55,6 @@ func main() {
 		return
 	}
 
-	db, closeDB, err := db.NewDatabase(*dblocation, *replica)
-	defer closeDB()
-
-	if err != nil {
-		log.Fatalf("NewDatabase(%q): failed with error: %v", *dblocation, err)
-	}
-
 	var config config.Config
 
 	if _, err := toml.DecodeFile(*configFile, &config); err != nil {
@@ -94,6 +86,14 @@ func main() {
 		log.Fatalf("Shard %q was not found", *shard)
 	}
 
+	db, closeDB, err := db.NewDatabase(*dblocation, *replica, replicaMap[shardIndex])
+
+	defer closeDB()
+
+	if err != nil {
+		log.Fatalf("NewDatabase(%q): failed with error: %v", *dblocation, err)
+	}
+
 	//delete extra keys offline if purge flag is set to true
 	if *purge == true {
 		db.DeleteExtraKeys(shardIndex, shardCount)
@@ -107,8 +107,8 @@ func main() {
 			log.Fatalf("Could not find a address mapping for master shard with index %d", shardIndex)
 		}
 
-		go replication.KeyDownloadLoop(db, masterAddress)
-		go deletion.KeyDeletionLoop(db, masterAddress)
+		go replication.KeyDownloadLoop(db, masterAddress, *httpAddress)
+		// go deletion.KeyDeletionLoop(db, masterAddress, *httpAddress)
 	}
 
 	log.Printf("Current shard is %q and shard index is %v and total shard count is %v", *shard, shardIndex, shardCount)
@@ -134,6 +134,18 @@ func main() {
 	http.HandleFunc("/deleteKeyFDQ", srv.HandleDeleteKeyFromDeletionQueue)
 
 	http.HandleFunc("/getDeletionHead", srv.HandleDeletionQueueHead)
+
+	http.HandleFunc("/readLog", srv.HandleReadLog)
+
+	http.HandleFunc("/getLogAtIndex", srv.HandleFetchLogIndex)
+
+	http.HandleFunc("/getNextLogEntry", srv.HandleGetNextLogEntry)
+
+	http.HandleFunc("/fetchStatus", srv.FetchStatus)
+
+	http.HandleFunc("/getLogLength", srv.HandleGetLogLength)
+
+	http.HandleFunc("/incrementNextIndex", srv.HandleIncrementNextIndex)
 
 	log.Fatal(http.ListenAndServe(*httpAddress, nil))
 

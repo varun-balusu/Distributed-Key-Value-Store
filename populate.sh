@@ -11,6 +11,6 @@
 
 for key in {1..100}
 do
-curl 'http://localhost:8080/set?key='$key'&value=good'
+curl 'http://localhost:8080/set?key='$key'&value='$key
 
 done

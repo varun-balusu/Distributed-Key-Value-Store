@@ -17,11 +17,11 @@ type KeyValuePair struct {
 	Err   error
 }
 
-func KeyDeletionLoop(db *db.Database, masterAddress string) {
+func KeyDeletionLoop(db *db.Database, masterAddress string, httpAddress string) {
 
 	for {
 
-		keyfound, err := deleteKeys(db, masterAddress)
+		keyfound, err := deleteKeys(db, masterAddress, httpAddress)
 
 		if err != nil {
 			log.Printf("Error deleting keys: %v", err)
@@ -36,7 +36,7 @@ func KeyDeletionLoop(db *db.Database, masterAddress string) {
 	}
 }
 
-func deleteKeys(db *db.Database, masterAddress string) (keyFound bool, err error) {
+func deleteKeys(db *db.Database, masterAddress string, httpAddress string) (keyFound bool, err error) {
 	var url string = "http://" + masterAddress + "/getDeletionHead"
 
 	resp, err := http.Get(url)
@@ -59,12 +59,15 @@ func deleteKeys(db *db.Database, masterAddress string) (keyFound bool, err error
 		return false, nil
 	}
 
+	log.Printf("key is %v and value is %v", response.Key, response.Value)
+
 	if err := db.DeleteReplicaKey(response.Key, []byte(response.Value)); err != nil {
-		return false, nil
+		log.Printf("error deleteing key in replica %v", err)
+		return false, err
 	}
 	// v, err := db.GetKey(response.Key)
 
-	if err := deleteKeyFromDeletionQueue(string(response.Key), string(response.Value), masterAddress); err != nil {
+	if err := deleteKeyFromDeletionQueue(string(response.Key), string(response.Value), masterAddress, httpAddress); err != nil {
 		log.Printf("delete key from deletion queue failed: %v", err)
 	}
 
@@ -73,11 +76,11 @@ func deleteKeys(db *db.Database, masterAddress string) (keyFound bool, err error
 
 }
 
-func deleteKeyFromDeletionQueue(key string, value string, masterAddress string) (err error) {
+func deleteKeyFromDeletionQueue(key string, value string, masterAddress string, httpAddress string) (err error) {
 
 	var url string = "http://" + masterAddress + "/deleteKeyFDQ?" + "key=" + key + "&value=" + value
 
-	log.Printf("deleting key %v with value %v on server %v from deletion.go", key, value, masterAddress)
+	log.Printf("deleting key %v with value %v on server %v from deletion.go and my address is %v", key, value, masterAddress, httpAddress)
 
 	resp, err := http.Get(url)
 

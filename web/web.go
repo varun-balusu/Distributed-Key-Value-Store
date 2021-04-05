@@ -10,6 +10,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"strconv"
 	"sync"
 )
 
@@ -147,6 +148,56 @@ func (s *Server) HandleDelete(res http.ResponseWriter, req *http.Request) {
 
 }
 
+func (s *Server) HandleFetchLogIndex(res http.ResponseWriter, req *http.Request) {
+	req.ParseForm()
+
+	index, _ := strconv.Atoi(req.Form.Get("index"))
+
+	// theLog := s.db.GetLog()
+
+	c, err := s.db.GetLogAt(index)
+	if err != nil {
+		fmt.Fprintf(res, "Called GetLogAt and got error: %v\n", err)
+	}
+
+	// enc := json.NewEncoder(res)
+
+	fmt.Fprintf(res, "Called GetLogAt and got command: %+v\n", c)
+
+	// enc.Encode(theLog.Transcript[index])
+
+}
+func (s *Server) HandleGetLogLength(res http.ResponseWriter, req *http.Request) {
+	length := s.db.GetLogLength()
+	fmt.Fprintf(res, strconv.Itoa(length))
+}
+func (s *Server) HandleIncrementNextIndex(res http.ResponseWriter, req *http.Request) {
+	req.ParseForm()
+
+	address := req.Form.Get("address")
+	err := s.db.IncrementNextIndex(address)
+	if err != nil {
+		fmt.Fprintf(res, "called incrementnextIndex and got error: %v", err)
+	} else {
+		fmt.Fprintf(res, "ok")
+	}
+}
+func (s *Server) HandleGetNextLogEntry(res http.ResponseWriter, req *http.Request) {
+	req.ParseForm()
+
+	address := req.Form.Get("address")
+
+	c, err := s.db.GetNextLogEntry(address)
+	enc := json.NewEncoder(res)
+
+	enc.Encode(&replication.LogEntry{
+		Command: c,
+		Err:     err,
+	})
+
+	fmt.Fprintf(res, "Called GetNExtLogEntry and got command %+v and error: %v\n", c, err)
+}
+
 func (s *Server) HandleDeleteExtraKeys(res http.ResponseWriter, req *http.Request) {
 
 	err := s.db.DeleteExtraKeys(s.shardIndex, s.shardCount)
@@ -231,17 +282,15 @@ func (s *Server) HandleDeleteKeyFromReplicationQueue(res http.ResponseWriter, re
 
 }
 
-// func (s *Server) FetchStatus(res http.ResponseWriter, req *http.Request) {
-// 	req.ParseForm()
-// 	key := req.FormValue("key")
-// 	value := req.Form.Get("value")
-
-// }
+func (s *Server) FetchStatus(res http.ResponseWriter, req *http.Request) {
+	fmt.Fprintf(res, "ok")
+}
 
 func (s *Server) HandleDeleteKeyFromDeletionQueue(res http.ResponseWriter, req *http.Request) {
 	req.ParseForm()
 	key := req.FormValue("key")
 	value := req.Form.Get("value")
+	// var numValidResponses int = 0;
 
 	err := s.db.DeleteKeyFromDeletionQueue([]byte(key), []byte(value))
 
@@ -252,4 +301,9 @@ func (s *Server) HandleDeleteKeyFromDeletionQueue(res http.ResponseWriter, req *
 	}
 
 	fmt.Fprintf(res, "ok")
+}
+
+func (s *Server) HandleReadLog(res http.ResponseWriter, req *http.Request) {
+	s.db.ReadLog()
+
 }
