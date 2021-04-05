@@ -8,7 +8,6 @@ import (
 	"sync"
 
 	bolt "go.etcd.io/bbolt"
-	"golang.org/x/sync/semaphore"
 )
 
 var theDefaultBucket = []byte("Default_Bucket")
@@ -36,8 +35,6 @@ type Command struct {
 type Log struct {
 	Transcript []Command
 }
-
-var sem = semaphore.NewWeighted(1)
 
 // NewDatabase creates an instance of a boltdatabse with bolt.open() at the specified
 // dbpath, return as error if bolt.open throws and error, and other wise if succesful
