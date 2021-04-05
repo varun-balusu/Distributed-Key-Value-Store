@@ -127,14 +127,6 @@ func main() {
 
 	http.HandleFunc("/purge", srv.HandleDeleteExtraKeys)
 
-	http.HandleFunc("/getReplicationHead", srv.HandleReplicationQueueHead)
-
-	http.HandleFunc("/deleteKeyFRQ", srv.HandleDeleteKeyFromReplicationQueue)
-
-	http.HandleFunc("/deleteKeyFDQ", srv.HandleDeleteKeyFromDeletionQueue)
-
-	http.HandleFunc("/getDeletionHead", srv.HandleDeletionQueueHead)
-
 	http.HandleFunc("/readLog", srv.HandleReadLog)
 
 	http.HandleFunc("/getLogAtIndex", srv.HandleFetchLogIndex)

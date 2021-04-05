@@ -11,19 +11,18 @@ import (
 )
 
 var theDefaultBucket = []byte("Default_Bucket")
-var replicationBucket = []byte("Replication_Queue")
-var deletionBucket = []byte("Deletion_Queue")
 
 var theLog Log
 
 // Database is a open bold database
 type Database struct {
-	db        *bolt.DB
-	readOnly  bool
-	theLog    Log
-	nextIndex int
-	mu        sync.Mutex
-	indexMap  map[string]int
+	db            *bolt.DB
+	readOnly      bool
+	theLog        Log
+	nextIndex     int
+	mu            sync.Mutex
+	indexMapMutex sync.RWMutex
+	indexMap      map[string]int
 }
 
 type Command struct {
@@ -65,22 +64,6 @@ func NewDatabase(dbpath string, readOnly bool, replicaArr []string) (db *Databas
 		return nil, nil, createDefaultBucketError
 	}
 
-	if !readOnly {
-		createReplicationBucketError := db.CreateReplicationBucket()
-
-		if createReplicationBucketError != nil {
-			closeDB()
-			return nil, nil, createReplicationBucketError
-		}
-
-		createDeletionBucketError := db.CreateDeletionBucket()
-
-		if createDeletionBucketError != nil {
-			closeDB()
-			return nil, nil, createDeletionBucketError
-		}
-	}
-
 	return db, closeDB, nil
 }
 
@@ -92,30 +75,6 @@ func (d *Database) GetLog() Log {
 func (d *Database) CreateDefaultBucket() error {
 	err := d.db.Update(func(tx *bolt.Tx) error {
 		_, err := tx.CreateBucketIfNotExists(theDefaultBucket)
-		if err != nil {
-			return err
-		}
-		return nil
-	})
-
-	return err
-}
-
-func (d *Database) CreateReplicationBucket() error {
-	err := d.db.Update(func(tx *bolt.Tx) error {
-		_, err := tx.CreateBucketIfNotExists(replicationBucket)
-		if err != nil {
-			return err
-		}
-		return nil
-	})
-
-	return err
-}
-
-func (d *Database) CreateDeletionBucket() error {
-	err := d.db.Update(func(tx *bolt.Tx) error {
-		_, err := tx.CreateBucketIfNotExists(deletionBucket)
 		if err != nil {
 			return err
 		}
@@ -140,28 +99,6 @@ func (d *Database) SetKey(key string, value []byte) error {
 	}
 
 	d.theLog.Transcript = append(d.theLog.Transcript, *current)
-
-	rollbackError := d.db.Update(func(tx *bolt.Tx) error {
-		b := tx.Bucket(theDefaultBucket)
-		putErr := b.Put([]byte(key), []byte(value))
-
-		if putErr != nil {
-			return putErr
-		}
-
-		r := tx.Bucket(replicationBucket)
-
-		if err := r.Put([]byte(key), []byte(value)); err != nil {
-			return err
-		}
-
-		return nil
-	})
-	return rollbackError
-
-}
-
-func (d *Database) SetReplicationKey(key string, value []byte) error {
 
 	rollbackError := d.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket(theDefaultBucket)
@@ -214,44 +151,6 @@ func (d *Database) GetKey(key string) (value []byte, err error) {
 	return value, rollbackError
 }
 
-func (d *Database) ReplicationQueueHead() (key []byte, value []byte, err error) {
-	err = d.db.View(func(tx *bolt.Tx) error {
-		r := tx.Bucket(replicationBucket)
-		k, v := r.Cursor().First()
-		key = make([]byte, len(k))
-		copy(key, k)
-		value = make([]byte, len(v))
-		copy(value, v)
-		return nil
-	})
-
-	return key, value, err
-}
-
-func (d *Database) DeleteKeyFromReplicationQueue(key []byte, value []byte) (err error) {
-	rollbackError := d.db.Update(func(tx *bolt.Tx) error {
-		r := tx.Bucket(replicationBucket)
-		v := r.Get(key)
-
-		//key already deleted from replication queue and changes applied to replica
-		if v == nil {
-			return nil
-		}
-
-		if !bytes.Equal(value, v) {
-			return errors.New("Cannot delete key from replication queue while changes are in flight")
-		}
-
-		if err := r.Delete(key); err != nil {
-			return err
-		}
-
-		return nil
-	})
-
-	return rollbackError
-}
-
 // DeleteKey deletes a key from the current bucket
 func (d *Database) DeleteReplicaKey(key string, value []byte) (err error) {
 	rollbackError := d.db.Update(func(tx *bolt.Tx) error {
@@ -288,45 +187,6 @@ func (d *Database) DeleteReplicaKey(key string, value []byte) (err error) {
 	return rollbackError
 }
 
-//bih yah
-func (d *Database) DeleteKeyFromDeletionQueue(key []byte, value []byte) (err error) {
-	rollbackError := d.db.Update(func(tx *bolt.Tx) error {
-		r := tx.Bucket(deletionBucket)
-		v := r.Get(key)
-
-		//key already deleted from replication queue and changes applied to replica
-		if v == nil {
-			return nil
-		}
-
-		if !bytes.Equal(value, v) {
-			return errors.New("Cannot delete key from deletion queue while changes are in flight")
-		}
-
-		if err := r.Delete(key); err != nil {
-			return err
-		}
-
-		return nil
-	})
-
-	return rollbackError
-}
-
-func (d *Database) DeletionQueueHead() (key []byte, value []byte, err error) {
-	err = d.db.View(func(tx *bolt.Tx) error {
-		d := tx.Bucket(deletionBucket)
-		k, v := d.Cursor().First()
-		key = make([]byte, len(k))
-		copy(key, k)
-		value = make([]byte, len(v))
-		copy(value, v)
-		return nil
-	})
-	// log.Printf("Deletion queue head is %v", key)
-	return key, value, err
-}
-
 func (d *Database) DeleteKey(key string) (err error) {
 	if d.readOnly {
 		return errors.New("Cannot delete from read-only database delete from Master instead")
@@ -340,16 +200,10 @@ func (d *Database) DeleteKey(key string) (err error) {
 
 	rollbackError := d.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket(theDefaultBucket)
-		value := b.Get([]byte(key))
 		deleteError := b.Delete([]byte(key))
 
 		if deleteError != nil {
 			return deleteError
-		}
-
-		d := tx.Bucket(deletionBucket)
-		if err := d.Put([]byte(key), []byte(value)); err != nil {
-			return err
 		}
 
 		return nil
@@ -393,15 +247,18 @@ func (d *Database) GetLogLength() int {
 }
 
 func (d *Database) IncrementNextIndex(address string) error {
+	// d.mu.Lock()
+	d.mu.Lock()
 	index, present := d.indexMap[address]
 	if !present {
 		return errors.New("address not found in index Map")
+
 	}
-	d.mu.Lock()
+
 	index++
 	d.indexMap[address] = index
-	d.mu.Unlock()
-
+	// d.mu.Unlock()
+	defer d.mu.Unlock()
 	return nil
 }
 
@@ -409,8 +266,11 @@ func (d *Database) GetNextLogEntry(address string) (c Command, err error) {
 	if d.readOnly {
 		return Command{}, errors.New("Cant read from slave Log")
 	}
+
 	log := d.theLog.Transcript
+	d.mu.Lock()
 	index := d.indexMap[address]
+	d.mu.Unlock()
 	if index >= len(log) {
 		return Command{}, errors.New("No next Entry avaliable")
 	}

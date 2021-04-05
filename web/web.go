@@ -7,11 +7,9 @@ import (
 	"fmt"
 	"hash/fnv"
 	"io"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"strconv"
-	"sync"
 )
 
 // Server contains a databse
@@ -205,101 +203,7 @@ func (s *Server) HandleDeleteExtraKeys(res http.ResponseWriter, req *http.Reques
 	fmt.Fprintf(res, "Called DeleteExtraKeys and got error: %v\n", err)
 }
 
-func (s *Server) HandleReplicationQueueHead(res http.ResponseWriter, req *http.Request) {
-
-	enc := json.NewEncoder(res)
-
-	key, value, err := s.db.ReplicationQueueHead()
-
-	enc.Encode(&replication.KeyValuePair{
-		Key:   string(key),
-		Value: string(value),
-		Err:   err,
-	})
-
-	fmt.Fprintf(res, "Called ReplicationQueueHead and got key %v and value %v and error: %v\n", string(key), string(value), err)
-}
-
-func (s *Server) HandleDeletionQueueHead(res http.ResponseWriter, req *http.Request) {
-
-	enc := json.NewEncoder(res)
-
-	key, value, err := s.db.DeletionQueueHead()
-
-	enc.Encode(&replication.KeyValuePair{
-		Key:   string(key),
-		Value: string(value),
-		Err:   err,
-	})
-
-	fmt.Fprintf(res, "Called DeletionQueueHead and got key %v and value %v and error: %v\n", string(key), string(value), err)
-}
-
-func (s *Server) HandleDeleteKeyFromReplicationQueue(res http.ResponseWriter, req *http.Request) {
-	req.ParseForm()
-	key := req.FormValue("key")
-	value := req.Form.Get("value")
-	var numValidResponses int = 0
-	// log.Printf("value to match is %v", value)
-	var wg sync.WaitGroup
-
-	for i := 0; i < len(s.replicaArr); i++ {
-		var url string = "http://" + s.replicaArr[i] + "/get?key=" + key
-		// fmt.Printf("calling get to %v\n", url)
-		wg.Add(1)
-		go func(url string, value string) {
-			resp, err := http.Get(url)
-			if err != nil {
-				fmt.Fprintf(res, "error: %v", err)
-			}
-
-			v, err := ioutil.ReadAll(resp.Body)
-			// log.Printf("value from replica url %v is %v", url, string(v))
-			if err != nil {
-				fmt.Fprintf(res, "error: %v", err)
-			}
-
-			if string(v) == value {
-				numValidResponses++
-			}
-
-			wg.Done()
-		}(url, value)
-	}
-
-	wg.Wait()
-
-	// log.Printf("number of valid responses %d\n", numValidResponses)
-	if numValidResponses == len(s.replicaArr) {
-		err := s.db.DeleteKeyFromReplicationQueue([]byte(key), []byte(value))
-		if err != nil {
-			res.WriteHeader(500)
-			fmt.Fprintf(res, "error: %v", err)
-			return
-		}
-		fmt.Fprintf(res, "ok")
-	}
-
-}
-
 func (s *Server) FetchStatus(res http.ResponseWriter, req *http.Request) {
-	fmt.Fprintf(res, "ok")
-}
-
-func (s *Server) HandleDeleteKeyFromDeletionQueue(res http.ResponseWriter, req *http.Request) {
-	req.ParseForm()
-	key := req.FormValue("key")
-	value := req.Form.Get("value")
-	// var numValidResponses int = 0;
-
-	err := s.db.DeleteKeyFromDeletionQueue([]byte(key), []byte(value))
-
-	if err != nil {
-		res.WriteHeader(500)
-		fmt.Fprintf(res, "error: %v", err)
-		return
-	}
-
 	fmt.Fprintf(res, "ok")
 }
 
