@@ -2,6 +2,7 @@ package web
 
 import (
 	"distribkv/usr/distributedkv/db"
+	"distribkv/usr/distributedkv/election"
 	"distribkv/usr/distributedkv/replication"
 	"encoding/json"
 	"fmt"
@@ -10,15 +11,19 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"sync"
 )
 
 // Server contains a databse
 type Server struct {
-	db         *db.Database
-	shardIndex int
-	shardCount int
-	addressMap map[int]string
-	replicaArr []string
+	db          *db.Database
+	shardIndex  int
+	shardCount  int
+	addressMap  map[int]string
+	replicaArr  []string
+	numVotes    int
+	currentTerm int
+	mu          sync.Mutex
 }
 
 type ValueObject struct {
@@ -33,7 +38,7 @@ func NewServer(db *db.Database, shardIndex int, shardCount int, addressMap map[i
 		}
 	}
 
-	srv = &Server{db: db, shardIndex: shardIndex, shardCount: shardCount, addressMap: addressMap, replicaArr: replicaArr}
+	srv = &Server{db: db, shardIndex: shardIndex, shardCount: shardCount, addressMap: addressMap, replicaArr: replicaArr, numVotes: 1, currentTerm: 1}
 
 	return srv
 }
@@ -165,6 +170,66 @@ func (s *Server) HandleFetchLogIndex(res http.ResponseWriter, req *http.Request)
 	// enc.Encode(theLog.Transcript[index])
 
 }
+
+func (s *Server) HandleFetchCurrentTerm(res http.ResponseWriter, req *http.Request) {
+	fmt.Fprintf(res, "%d", s.currentTerm)
+}
+
+func (s *Server) HandleTriggerNextTerm(res http.ResponseWriter, req *http.Request) {
+	req.ParseForm()
+	nt := req.Form.Get("term")
+	nextTerm, err := strconv.Atoi(nt)
+	if err != nil {
+		fmt.Fprintf(res, "Error parsing term from form: %v", err)
+		return
+	}
+	if nextTerm == s.currentTerm {
+		fmt.Fprintf(res, "current term is already set correctly")
+		return
+	}
+	s.mu.Lock()
+	s.currentTerm = nextTerm
+	s.numVotes = 1
+	s.mu.Unlock()
+	fmt.Fprintf(res, "%d", s.currentTerm)
+}
+
+func (s *Server) HandleTriggerHeartbeat(res http.ResponseWriter, req *http.Request) {
+	fmt.Fprintf(res, "ok")
+	election.TriggerTimeoutReset()
+	//when this endpoint is reached the election timer is to be reset
+}
+
+func (s *Server) HandleVoteForSelf(res http.ResponseWriter, req *http.Request) {
+	s.mu.Lock()
+	s.numVotes = 0
+	s.mu.Unlock()
+	fmt.Fprintf(res, "ok")
+}
+
+func (s *Server) HandleTriggerVoteRequest(res http.ResponseWriter, req *http.Request) {
+
+	req.ParseForm()
+
+	term, _ := strconv.Atoi(req.Form.Get("term"))
+
+	// s.mu.Lock()
+	currentTerm := s.currentTerm
+	// s.mu.Unlock()
+
+	if s.numVotes == 1 && term == currentTerm {
+		fmt.Fprintf(res, "ok")
+		s.mu.Lock()
+		s.numVotes = 0
+		s.mu.Unlock()
+		election.TriggerTimeoutReset()
+	} else {
+		log.Println("already cast vote")
+		fmt.Fprintf(res, "already cast vote")
+	}
+
+}
+
 func (s *Server) HandleGetLogLength(res http.ResponseWriter, req *http.Request) {
 	length := s.db.GetLogLength()
 	fmt.Fprintf(res, strconv.Itoa(length))

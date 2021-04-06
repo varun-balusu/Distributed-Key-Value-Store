@@ -16,13 +16,11 @@ var theLog Log
 
 // Database is a open bold database
 type Database struct {
-	db            *bolt.DB
-	readOnly      bool
-	theLog        Log
-	nextIndex     int
-	mu            sync.Mutex
-	indexMapMutex sync.RWMutex
-	indexMap      map[string]int
+	db       *bolt.DB
+	readOnly bool
+	theLog   Log
+	mu       sync.Mutex
+	indexMap map[string]int
 }
 
 type Command struct {
@@ -54,7 +52,7 @@ func NewDatabase(dbpath string, readOnly bool, replicaArr []string) (db *Databas
 		indexMap[replicaArr[i]] = 0
 	}
 
-	db = &Database{db: boltDatabase, readOnly: readOnly, theLog: theLog, nextIndex: 0, indexMap: indexMap}
+	db = &Database{db: boltDatabase, readOnly: readOnly, theLog: theLog, indexMap: indexMap}
 	closeDB = boltDatabase.Close
 
 	createDefaultBucketError := db.CreateDefaultBucket()

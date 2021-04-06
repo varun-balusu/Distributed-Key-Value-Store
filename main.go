@@ -3,6 +3,7 @@ package main
 import (
 	"distribkv/usr/distributedkv/config"
 	"distribkv/usr/distributedkv/db"
+	"distribkv/usr/distributedkv/election"
 	"distribkv/usr/distributedkv/replication"
 	"distribkv/usr/distributedkv/resharder"
 	"distribkv/usr/distributedkv/web"
@@ -41,6 +42,18 @@ func parseFlags() {
 		log.Fatalln("Must Provide shard")
 	}
 
+}
+
+func filterOutAddress(replicaArr []string, httpAddress string) []string {
+	var res []string
+
+	for i := 0; i < len(replicaArr); i++ {
+		if replicaArr[i] != httpAddress {
+			res = append(res, replicaArr[i])
+		}
+	}
+
+	return res
 }
 
 func main() {
@@ -108,7 +121,11 @@ func main() {
 		}
 
 		go replication.KeyDownloadLoop(db, masterAddress, *httpAddress)
-		// go deletion.KeyDeletionLoop(db, masterAddress, *httpAddress)
+		filteredAddresses := filterOutAddress(replicaMap[shardIndex], *httpAddress)
+		numNodes := len(replicaMap[shardIndex]) + 1
+		go election.ElectionLoop(filteredAddresses, numNodes, *httpAddress)
+	} else {
+		// go hearbeat.SendHeartbeats(replicaMap[shardIndex])
 	}
 
 	log.Printf("Current shard is %q and shard index is %v and total shard count is %v", *shard, shardIndex, shardCount)
@@ -138,6 +155,16 @@ func main() {
 	http.HandleFunc("/getLogLength", srv.HandleGetLogLength)
 
 	http.HandleFunc("/incrementNextIndex", srv.HandleIncrementNextIndex)
+
+	http.HandleFunc("/triggerHeartbeat", srv.HandleTriggerHeartbeat)
+
+	http.HandleFunc("/triggerVoteRequest", srv.HandleTriggerVoteRequest)
+
+	http.HandleFunc("/triggerVoteForSelf", srv.HandleVoteForSelf)
+
+	http.HandleFunc("/triggerNextTerm", srv.HandleTriggerNextTerm)
+
+	http.HandleFunc("/getCurrentTerm", srv.HandleFetchCurrentTerm)
 
 	log.Fatal(http.ListenAndServe(*httpAddress, nil))
 
