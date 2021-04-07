@@ -13,23 +13,30 @@ import (
 
 var recievedHeartbeat bool
 
+var ad string
+
 type ElectionCounter struct {
-	tk *time.Ticker
+	tk    *time.Ticker
+	state string
 }
 
 var EC *ElectionCounter
 
 func ElectionLoop(peers []string, numNodes int, selfAddress string) {
+	//debug
+	ad = selfAddress
 
 	rand.Seed(time.Now().UnixNano())
-	min := 5
-	max := 5
+	min := 150
+	max := 300
 
-	duration := time.Duration(rand.Intn(max-min+1)+min) * time.Second
+	duration := time.Duration(rand.Intn(max-min+1)+min) * time.Millisecond
+	// duration = time.Duration(175) * time.Millisecond
+	log.Printf("duration is %v", duration)
 
 	tk := time.NewTicker(duration)
 
-	EC = &ElectionCounter{tk: tk}
+	EC = &ElectionCounter{tk: tk, state: "FOLLOWER"}
 
 	var wg sync.WaitGroup
 
@@ -42,6 +49,9 @@ func ElectionLoop(peers []string, numNodes int, selfAddress string) {
 
 	for range tk.C {
 		log.Println("timeout occured inside the for loop")
+
+		EC.state = "CANDIDATE"
+		log.Printf("Node %v becomes %v", selfAddress, EC.state)
 		//Trigger election happens here
 		log.Println("votting for self")
 		//vote for self
@@ -92,6 +102,10 @@ func ElectionLoop(peers []string, numNodes int, selfAddress string) {
 			}(url)
 		}
 		wg.Wait()
+		if EC.state == "FOLLOWER" {
+			TriggerTimeoutReset()
+			continue
+		}
 		log.Printf("num votes recieved is %d", numVotesRecieved)
 		clusterAddressArr := append(peers, selfAddress)
 		for i := 0; i < len(clusterAddressArr); i++ {
@@ -99,7 +113,7 @@ func ElectionLoop(peers []string, numNodes int, selfAddress string) {
 			http.Get(url)
 		}
 
-		if numVotesRecieved == 2 {
+		if numVotesRecieved >= (numNodes/2)+1 {
 			log.Printf("replica at %v won the election", selfAddress)
 
 			go hearbeat.SendHeartbeats(peers)
@@ -115,12 +129,14 @@ func ElectionLoop(peers []string, numNodes int, selfAddress string) {
 }
 
 func TriggerTimeoutReset() {
-	log.Println("reseting the timeout")
+	EC.state = "FOLLOWER"
+	// log.Printf("node %v becomes %v", ad, EC.state)
+	// log.Println("reseting the timeout")
 	rand.Seed(time.Now().UnixNano())
-	min := 5
-	max := 10
+	min := 150
+	max := 300
 
-	duration := time.Duration(rand.Intn(max-min+1)+min) * time.Second
+	duration := time.Duration(rand.Intn(max-min+1)+min) * time.Millisecond
 
 	EC.tk.Reset(duration)
 }

@@ -213,11 +213,11 @@ func (s *Server) HandleTriggerVoteRequest(res http.ResponseWriter, req *http.Req
 
 	term, _ := strconv.Atoi(req.Form.Get("term"))
 
-	// s.mu.Lock()
+	s.mu.Lock()
 	currentTerm := s.currentTerm
-	// s.mu.Unlock()
+	s.mu.Unlock()
 
-	if s.numVotes == 1 && term == currentTerm {
+	if s.numVotes == 1 && term >= currentTerm {
 		fmt.Fprintf(res, "ok")
 		s.mu.Lock()
 		s.numVotes = 0

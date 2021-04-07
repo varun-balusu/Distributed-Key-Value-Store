@@ -9,15 +9,19 @@ import (
 
 func SendHeartbeats(replicaArr []string) {
 
-	duration := time.Duration(2) * time.Second
+	duration := time.Duration(50) * time.Millisecond
 
 	tk := time.NewTicker(duration)
-
+	// x := 0
 	for range tk.C {
-
+		// if x == 20 {
+		// 	break
+		// }
 		for i := 0; i < len(replicaArr); i++ {
 			TriggerHeartbeat(replicaArr[i])
 		}
+
+		// x++
 	}
 
 	defer tk.Stop()
@@ -36,8 +40,8 @@ func TriggerHeartbeat(address string) {
 
 	if err != nil {
 		log.Printf("error parsing body: %v", err)
-	} else {
-		log.Printf("got ack from replica with status: %v", string(status))
+	} else if string(status) == "ok" {
+		// log.Printf("got ack from replica with status: %v", string(status))
 	}
 
 	defer resp.Body.Close()
