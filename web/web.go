@@ -172,7 +172,9 @@ func (s *Server) HandleFetchLogIndex(res http.ResponseWriter, req *http.Request)
 }
 
 func (s *Server) HandleFetchCurrentTerm(res http.ResponseWriter, req *http.Request) {
+	s.mu.Lock()
 	fmt.Fprintf(res, "%d", s.currentTerm)
+	s.mu.Unlock()
 }
 
 func (s *Server) HandleTriggerNextTerm(res http.ResponseWriter, req *http.Request) {
@@ -183,13 +185,13 @@ func (s *Server) HandleTriggerNextTerm(res http.ResponseWriter, req *http.Reques
 		fmt.Fprintf(res, "Error parsing term from form: %v", err)
 		return
 	}
-	if nextTerm == s.currentTerm {
+	if nextTerm <= s.currentTerm {
 		fmt.Fprintf(res, "current term is already set correctly")
 		return
 	}
 	s.mu.Lock()
 	s.currentTerm = nextTerm
-	s.numVotes = 1
+	s.numVotes = 0
 	s.mu.Unlock()
 	fmt.Fprintf(res, "%d", s.currentTerm)
 }
@@ -200,33 +202,22 @@ func (s *Server) HandleTriggerHeartbeat(res http.ResponseWriter, req *http.Reque
 	//when this endpoint is reached the election timer is to be reset
 }
 
-func (s *Server) HandleVoteForSelf(res http.ResponseWriter, req *http.Request) {
-	s.mu.Lock()
-	s.numVotes = 0
-	s.mu.Unlock()
-	fmt.Fprintf(res, "ok")
-}
-
 func (s *Server) HandleTriggerVoteRequest(res http.ResponseWriter, req *http.Request) {
-
 	req.ParseForm()
 
-	term, _ := strconv.Atoi(req.Form.Get("term"))
+	t := req.Form.Get("term")
+	term, _ := strconv.Atoi(t)
+	enc := json.NewEncoder(res)
+	// var voteGranted bool
 
-	// s.mu.Lock()
-	currentTerm := s.currentTerm
-	// s.mu.Unlock()
+	if s.currentTerm == term {
 
-	if s.numVotes == 1 && term == currentTerm {
-		fmt.Fprintf(res, "ok")
-		s.mu.Lock()
-		s.numVotes = 0
-		s.mu.Unlock()
-		election.TriggerTimeoutReset()
-	} else {
-		log.Println("already cast vote")
-		fmt.Fprintf(res, "already cast vote")
 	}
+
+	enc.Encode(&election.VoteReply{
+		Term: s.currentTerm,
+		Err:  nil,
+	})
 
 }
 

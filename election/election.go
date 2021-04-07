@@ -1,20 +1,25 @@
 package election
 
 import (
-	"distribkv/usr/distributedkv/hearbeat"
-	"io/ioutil"
+	"encoding/json"
 	"log"
 	"math/rand"
 	"net/http"
 	"strconv"
-	"sync"
 	"time"
 )
 
 var recievedHeartbeat bool
 
 type ElectionCounter struct {
-	tk *time.Ticker
+	tk          *time.Ticker
+	currentTerm int
+	state       string
+}
+
+type VoteReply struct {
+	Term int
+	Err  error
 }
 
 var EC *ElectionCounter
@@ -22,112 +27,65 @@ var EC *ElectionCounter
 func ElectionLoop(peers []string, numNodes int, selfAddress string) {
 
 	rand.Seed(time.Now().UnixNano())
-	min := 5
-	max := 5
+	min := 150
+	max := 300
 
-	duration := time.Duration(rand.Intn(max-min+1)+min) * time.Second
+	duration := time.Duration(rand.Intn(max-min+1)+min) * time.Millisecond
+
+	log.Printf("duration in %v is %v", selfAddress, duration)
+	// duration = time.Duration(150) * time.Millisecond
 
 	tk := time.NewTicker(duration)
 
-	EC = &ElectionCounter{tk: tk}
+	EC = &ElectionCounter{tk: tk, state: "FOLLOWER"}
 
-	var wg sync.WaitGroup
+	// var wg sync.WaitGroup
 
-	numVotesRecieved := 1
-
-	for i := 0; i < len(peers); i++ {
-		log.Printf("replica with address: %v has peers:", selfAddress)
-		log.Printf("%v\n", peers[i])
-	}
+	// numVotesRecieved := 1
 
 	for range tk.C {
-		log.Println("timeout occured inside the for loop")
-		//Trigger election happens here
-		log.Println("votting for self")
-		//vote for self
-		var url string = "http://" + selfAddress + "/triggerVoteForSelf"
-		_, err := http.Get(url)
-		if err != nil {
-			log.Printf("there was an error voting for self: %v", err)
-		}
-		//finding out the current term
-		url = "http://" + selfAddress + "/getCurrentTerm"
-		resp, err := http.Get(url)
-		if err != nil {
-			log.Printf("error getting the current term %v", err)
-		}
-		//parse body for thr current term
-
-		term, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			log.Printf("error parsing body for term %v", err)
-		}
-
-		currentTerm, _ := strconv.Atoi(string(term))
-
-		resp.Body.Close()
+		EC.currentTerm++
+		EC.state = "CANDIDATE"
+		http.Get("http://" + selfAddress + "/triggerNextTerm?term=" + strconv.Itoa(EC.currentTerm))
 
 		for i := 0; i < len(peers); i++ {
-			//send vote request
-			var url string = "http://" + peers[i] + "/triggerVoteRequest?term=" + string(term)
-			log.Printf("triggering vote request from %v to url: %v", selfAddress, url)
-
-			wg.Add(1)
+			var url string = "http://" + peers[i] + "/triggerVoteRequest?term=" + strconv.Itoa(EC.currentTerm)
 			go func(url string) {
-				resp, err := http.Get(url)
-				if err != nil {
-					log.Printf("error fetching from url %v because of error %v", url, err)
+				resp, _ := http.Get(url)
+				var voteReply VoteReply
+				json.NewDecoder(resp.Body).Decode(&voteReply)
+
+				if voteReply.Term > EC.currentTerm {
+					log.Printf("term is out of date returning to follower")
+					EC.state = "FOLLOWER"
 					return
 				}
-				status, err := ioutil.ReadAll(resp.Body)
-				if err != nil {
-					log.Printf("recieved error parsing body: %v", err)
+
+				if voteReply.Term <= EC.currentTerm {
+
 				}
 
-				if string(status) == "ok" {
-					numVotesRecieved++
-				}
-
-				wg.Done()
 			}(url)
 		}
-		wg.Wait()
-		log.Printf("num votes recieved is %d", numVotesRecieved)
-		clusterAddressArr := append(peers, selfAddress)
-		for i := 0; i < len(clusterAddressArr); i++ {
-			var url string = "http://" + clusterAddressArr[i] + "/triggerNextTerm?term=" + strconv.Itoa(currentTerm+1)
-			http.Get(url)
+
+		if EC.state == "FOLLOWER" {
+			TriggerTimeoutReset()
+			continue
 		}
-
-		if numVotesRecieved == 2 {
-			log.Printf("replica at %v won the election", selfAddress)
-
-			go hearbeat.SendHeartbeats(peers)
-			break
-		}
-
-		TriggerTimeoutReset()
 
 	}
-
-	tk.Stop()
 
 }
 
 func TriggerTimeoutReset() {
+	EC.state = "FOLLOWER"
 	log.Println("reseting the timeout")
-	rand.Seed(time.Now().UnixNano())
-	min := 5
-	max := 10
 
-	duration := time.Duration(rand.Intn(max-min+1)+min) * time.Second
+	rand.Seed(time.Now().UnixNano())
+	min := 150
+	max := 300
+
+	duration := time.Duration(rand.Intn(max-min+1)+min) * time.Millisecond
 
 	EC.tk.Reset(duration)
 }
-
-// func ReturnVotes(peers []string) {
-// 	for i := 0; i < len(peers); i++ {
-// 		var url string = "http://" + peers[i] + "/returnVote"
-// 		http.Get()
-// 	}
-// }

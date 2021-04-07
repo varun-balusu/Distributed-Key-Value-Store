@@ -9,15 +9,19 @@ import (
 
 func SendHeartbeats(replicaArr []string) {
 
-	duration := time.Duration(2) * time.Second
+	duration := time.Duration(50) * time.Millisecond
 
 	tk := time.NewTicker(duration)
-
+	x := 0
 	for range tk.C {
-
+		if x == 10 {
+			break
+		}
 		for i := 0; i < len(replicaArr); i++ {
 			TriggerHeartbeat(replicaArr[i])
 		}
+
+		x++
 	}
 
 	defer tk.Stop()
