@@ -31,6 +31,20 @@ func KeyDownloadLoop(dba *db.Database, masterAddress string, myAddress string) {
 
 	if status == "ok" {
 		for {
+			var url string = "http://" + myAddress + "/getCurrentClusterLeader"
+			resp, err := http.Get(url)
+			if err != nil {
+				time.Sleep(time.Second * 2)
+				continue
+			}
+			currentLeaderAddress, _ := ioutil.ReadAll(resp.Body)
+
+			if string(currentLeaderAddress) == myAddress {
+				log.Printf("ending replication on server %v", myAddress)
+				break
+			} else {
+				log.Printf("my address is %v and my new leader is %v", myAddress, string(currentLeaderAddress))
+			}
 			keyfound, err := GetNextLogEntry(dba, masterAddress, myAddress)
 
 			if err != nil {

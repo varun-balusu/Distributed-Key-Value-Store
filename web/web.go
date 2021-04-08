@@ -104,6 +104,13 @@ func (s *Server) GetLeaderAddresses(res http.ResponseWriter, req *http.Request) 
 
 }
 
+func (s *Server) GetCurrentClusterLeader(res http.ResponseWriter, req *http.Request) {
+	currentLeaderAddress, _ := s.addressMap[s.shardIndex]
+
+	fmt.Fprintf(res, currentLeaderAddress)
+
+}
+
 //apply chages to your address map by changing the shardIndex in the addres map to
 //be equal to the new eader address also call the endpoint for all the replicas in the replica arr
 func (s *Server) ModifyAddressMap(res http.ResponseWriter, req *http.Request) {

@@ -176,6 +176,8 @@ func main() {
 
 	http.HandleFunc("/modifyAddressMap", srv.ModifyAddressMap)
 
+	http.HandleFunc("/getCurrentClusterLeader", srv.GetCurrentClusterLeader)
+
 	log.Fatal(http.ListenAndServe(*httpAddress, nil))
 
 }
