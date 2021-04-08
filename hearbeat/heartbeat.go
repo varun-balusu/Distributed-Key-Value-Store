@@ -74,20 +74,29 @@ func InitLeader(leaderAddress string, db *db.Database, replicaArr []string) erro
 	log.Printf("shard index is %v", string(shardIndex))
 
 	var leaders LeaderList
-	resp, err = http.Get("http://" + leaderAddress + "/getLeadersList")
+	resp, err = http.Get("http://" + leaderAddress + "/getLeadersList?newLeaderIdx=" + string(shardIndex))
 	if err != nil {
 		log.Printf("error getting leader list %v", err)
 		return err
 	}
 	json.NewDecoder(resp.Body).Decode(&leaders)
 
-	var wg sync.WaitGroup
+	leaders.LeaderAddresses = append(leaders.LeaderAddresses, leaderAddress)
 	for i := 0; i < len(leaders.LeaderAddresses); i++ {
-		//send vote request
+		log.Printf(leaders.LeaderAddresses[i])
+	}
+
+	db.ReadOnly = false
+	var wg sync.WaitGroup
+	log.Printf("lenght of the array is: %d", len(leaders.LeaderAddresses))
+	errHandler := errors.New("")
+	for i := 0; i < len(leaders.LeaderAddresses); i++ {
+
 		var url string = "http://" + leaders.LeaderAddresses[i] + "/modifyAddressMap?shardIndex=" + string(shardIndex) + "&newLeader=" + leaderAddress
-		errHandler := errors.New("")
+		// log.Printf("making request to url: %v", url)
+
 		wg.Add(1)
-		go func(url string, errHandler error) {
+		go func(url string) {
 			resp, err := http.Get(url)
 			if err != nil {
 				errHandler = err
@@ -98,19 +107,22 @@ func InitLeader(leaderAddress string, db *db.Database, replicaArr []string) erro
 				errHandler = err
 			}
 			if string(status) != "ok" {
-				errHandler = errors.New("error modifying the address hap ar url: url")
+				errHandler = errors.New("error modifying the address map at url: " + url)
+				// log.Printf("uh-oh")
 			}
 
 			wg.Done()
-		}(url, errHandler)
+		}(url)
 
-		if errHandler.Error() != "" {
-			return errHandler
-		}
+		// err := <-errHandler
+		// if err != nil {
+		// 	return err
+		// }
 	}
 	wg.Wait()
-
-	// db.ReadOnly = false
+	if errHandler.Error() != "" {
+		return errHandler
+	}
 
 	return nil
 }

@@ -174,6 +174,8 @@ func main() {
 
 	http.HandleFunc("/getLeadersList", srv.GetLeaderAddresses)
 
+	http.HandleFunc("/modifyAddressMap", srv.ModifyAddressMap)
+
 	log.Fatal(http.ListenAndServe(*httpAddress, nil))
 
 }

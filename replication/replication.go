@@ -5,6 +5,7 @@ import (
 	"distribkv/usr/distributedkv/db"
 	"encoding/json"
 	"errors"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -33,13 +34,16 @@ func KeyDownloadLoop(dba *db.Database, masterAddress string, myAddress string) {
 			keyfound, err := GetNextLogEntry(dba, masterAddress, myAddress)
 
 			if err != nil {
+				log.Printf("my address from replication is %v", myAddress)
 				log.Printf("Error Getting next log entry: %v", err)
+
 				time.Sleep(time.Second * 2)
 				continue
 			}
 
 			if !keyfound {
-				time.Sleep(time.Millisecond * 100)
+				log.Printf("my address from replication is %v", myAddress)
+				time.Sleep(time.Millisecond * 500)
 			}
 		}
 	}
@@ -71,6 +75,7 @@ func CheckMasterStatus(masterAddress string) string {
 }
 
 func GetNextLogEntry(dba *db.Database, masterAddress string, myAddress string) (keyFound bool, err error) {
+	//dynamically decide the master address maybe make another http request or import web package
 	theLog := dba.GetLog()
 	var currentLogEntry LogEntry
 	var url string = "http://" + masterAddress + "/getNextLogEntry?address=" + myAddress
@@ -80,7 +85,19 @@ func GetNextLogEntry(dba *db.Database, masterAddress string, myAddress string) (
 		return false, err
 	}
 
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return false, err
+	}
+	if len(body) == 0 {
+		return false, nil
+	}
+
 	if err := json.NewDecoder(resp.Body).Decode(&currentLogEntry); err != nil {
+		if err == io.EOF {
+			return false, nil
+		}
+
 		return false, err
 	}
 

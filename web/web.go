@@ -86,9 +86,14 @@ func (s *Server) GetShardIndex(res http.ResponseWriter, req *http.Request) {
 }
 
 func (s *Server) GetLeaderAddresses(res http.ResponseWriter, req *http.Request) {
+	req.ParseForm()
+	newLeaderIndex, _ := strconv.Atoi(req.Form.Get("newLeaderIdx"))
+
 	var leaderAddressArr []string
-	for _, value := range s.addressMap {
-		leaderAddressArr = append(leaderAddressArr, value)
+	for key, value := range s.addressMap {
+		if key != newLeaderIndex {
+			leaderAddressArr = append(leaderAddressArr, value)
+		}
 	}
 
 	enc := json.NewEncoder(res)
@@ -99,9 +104,27 @@ func (s *Server) GetLeaderAddresses(res http.ResponseWriter, req *http.Request) 
 
 }
 
+//apply chages to your address map by changing the shardIndex in the addres map to
+//be equal to the new eader address also call the endpoint for all the replicas in the replica arr
 func (s *Server) ModifyAddressMap(res http.ResponseWriter, req *http.Request) {
-	//apply chages to your address map by changing the shardIndex in the addres map to
-	//be equal to the new eader address also call the endpoint for all the replicas in the replica arr
+	req.ParseForm()
+	// log.Println("iside of modify function")
+	shardIdx := req.Form.Get("shardIndex")
+	newLeader := req.Form.Get("newLeader")
+
+	shardIndex, _ := strconv.Atoi(shardIdx)
+
+	s.addressMap[shardIndex] = newLeader
+
+	if !s.db.ReadOnly {
+		for i := 0; i < len(s.replicaArr); i++ {
+			var url string = "http://" + s.replicaArr[i] + "/modifyAddressMap?shardIndex=" + string(shardIdx) + "&newLeader=" + newLeader
+			http.Get(url)
+		}
+	}
+
+	fmt.Fprintf(res, "ok")
+
 }
 
 func (s *Server) redirectRequest(res http.ResponseWriter, req *http.Request, shardIdx int) {
@@ -141,7 +164,7 @@ func (s *Server) HandleSet(res http.ResponseWriter, req *http.Request) {
 
 	shardIdx := int(hash.Sum64() % uint64(s.shardCount))
 
-	if shardIdx != s.shardIndex {
+	if shardIdx != s.shardIndex || s.db.ReadOnly {
 
 		s.redirectRequest(res, req, shardIdx)
 
