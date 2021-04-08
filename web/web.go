@@ -3,6 +3,7 @@ package web
 import (
 	"distribkv/usr/distributedkv/db"
 	"distribkv/usr/distributedkv/election"
+	"distribkv/usr/distributedkv/hearbeat"
 	"distribkv/usr/distributedkv/replication"
 	"encoding/json"
 	"fmt"
@@ -76,6 +77,31 @@ func (s *Server) HandleGet(res http.ResponseWriter, req *http.Request) {
 	// 	Value: value,
 	// })
 
+}
+
+func (s *Server) GetShardIndex(res http.ResponseWriter, req *http.Request) {
+
+	fmt.Fprintf(res, strconv.Itoa(s.shardIndex))
+
+}
+
+func (s *Server) GetLeaderAddresses(res http.ResponseWriter, req *http.Request) {
+	var leaderAddressArr []string
+	for _, value := range s.addressMap {
+		leaderAddressArr = append(leaderAddressArr, value)
+	}
+
+	enc := json.NewEncoder(res)
+
+	enc.Encode(&hearbeat.LeaderList{
+		LeaderAddresses: leaderAddressArr,
+	})
+
+}
+
+func (s *Server) ModifyAddressMap(res http.ResponseWriter, req *http.Request) {
+	//apply chages to your address map by changing the shardIndex in the addres map to
+	//be equal to the new eader address also call the endpoint for all the replicas in the replica arr
 }
 
 func (s *Server) redirectRequest(res http.ResponseWriter, req *http.Request, shardIdx int) {
@@ -213,11 +239,13 @@ func (s *Server) HandleTriggerVoteRequest(res http.ResponseWriter, req *http.Req
 
 	term, _ := strconv.Atoi(req.Form.Get("term"))
 
+	logLength, _ := strconv.Atoi(req.Form.Get("logLength"))
+
 	s.mu.Lock()
 	currentTerm := s.currentTerm
 	s.mu.Unlock()
 
-	if s.numVotes == 1 && term >= currentTerm {
+	if s.numVotes == 1 && term >= currentTerm && logLength >= s.db.GetLogLength() {
 		fmt.Fprintf(res, "ok")
 		s.mu.Lock()
 		s.numVotes = 0

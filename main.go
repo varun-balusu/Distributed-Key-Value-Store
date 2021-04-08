@@ -113,19 +113,22 @@ func main() {
 		return
 	}
 
-	if *replica {
-		masterAddress, present := addressMap[shardIndex]
+	masterAddress, present := addressMap[shardIndex]
 
-		if !present {
-			log.Fatalf("Could not find a address mapping for master shard with index %d", shardIndex)
-		}
+	if !present {
+		log.Fatalf("Could not find a address mapping for master shard with index %d", shardIndex)
+	}
+
+	if *replica {
 
 		go replication.KeyDownloadLoop(db, masterAddress, *httpAddress)
+
 		filteredAddresses := filterOutAddress(replicaMap[shardIndex], *httpAddress)
 		numNodes := len(replicaMap[shardIndex]) + 1
-		go election.ElectionLoop(filteredAddresses, numNodes, *httpAddress)
+		go election.ElectionLoop(filteredAddresses, numNodes, *httpAddress, db)
+
 	} else {
-		// go hearbeat.SendHeartbeats(replicaMap[shardIndex])
+		// go hearbeat.SendHeartbeats(replicaMap[shardIndex], false, masterAddress, db)
 	}
 
 	log.Printf("Current shard is %q and shard index is %v and total shard count is %v", *shard, shardIndex, shardCount)
@@ -133,7 +136,8 @@ func main() {
 	if !*replica {
 		srv = web.NewServer(db, shardIndex, shardCount, addressMap, replicaMap[shardIndex])
 	} else {
-		srv = web.NewServer(db, shardIndex, shardCount, addressMap, nil)
+		filteredAddresses := filterOutAddress(replicaMap[shardIndex], *httpAddress)
+		srv = web.NewServer(db, shardIndex, shardCount, addressMap, filteredAddresses)
 	}
 
 	http.HandleFunc("/get", srv.HandleGet)
@@ -165,6 +169,10 @@ func main() {
 	http.HandleFunc("/triggerNextTerm", srv.HandleTriggerNextTerm)
 
 	http.HandleFunc("/getCurrentTerm", srv.HandleFetchCurrentTerm)
+
+	http.HandleFunc("/getShardIndex", srv.GetShardIndex)
+
+	http.HandleFunc("/getLeadersList", srv.GetLeaderAddresses)
 
 	log.Fatal(http.ListenAndServe(*httpAddress, nil))
 

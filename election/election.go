@@ -1,7 +1,9 @@
 package election
 
 import (
+	"distribkv/usr/distributedkv/db"
 	"distribkv/usr/distributedkv/hearbeat"
+	"io"
 	"io/ioutil"
 	"log"
 	"math/rand"
@@ -15,14 +17,15 @@ var recievedHeartbeat bool
 
 var ad string
 
-type ElectionCounter struct {
+type ElectionModule struct {
 	tk    *time.Ticker
 	state string
+	db    *db.Database
 }
 
-var EC *ElectionCounter
+var EC *ElectionModule
 
-func ElectionLoop(peers []string, numNodes int, selfAddress string) {
+func ElectionLoop(peers []string, numNodes int, selfAddress string, db *db.Database) {
 	//debug
 	ad = selfAddress
 
@@ -31,56 +34,51 @@ func ElectionLoop(peers []string, numNodes int, selfAddress string) {
 	max := 300
 
 	duration := time.Duration(rand.Intn(max-min+1)+min) * time.Millisecond
-	// duration = time.Duration(175) * time.Millisecond
-	log.Printf("duration is %v", duration)
 
 	tk := time.NewTicker(duration)
 
-	EC = &ElectionCounter{tk: tk, state: "FOLLOWER"}
+	EC = &ElectionModule{tk: tk, state: "FOLLOWER", db: db}
 
 	var wg sync.WaitGroup
 
 	numVotesRecieved := 1
 
-	for i := 0; i < len(peers); i++ {
-		log.Printf("replica with address: %v has peers:", selfAddress)
-		log.Printf("%v\n", peers[i])
-	}
-
 	for range tk.C {
-		log.Println("timeout occured inside the for loop")
-
 		EC.state = "CANDIDATE"
-		log.Printf("Node %v becomes %v", selfAddress, EC.state)
 		//Trigger election happens here
-		log.Println("votting for self")
+		//
 		//vote for self
 		var url string = "http://" + selfAddress + "/triggerVoteForSelf"
 		_, err := http.Get(url)
 		if err != nil {
+			TriggerTimeoutReset()
 			log.Printf("there was an error voting for self: %v", err)
+			continue
 		}
 		//finding out the current term
 		url = "http://" + selfAddress + "/getCurrentTerm"
 		resp, err := http.Get(url)
 		if err != nil {
+			TriggerTimeoutReset()
 			log.Printf("error getting the current term %v", err)
+			continue
 		}
 		//parse body for thr current term
 
-		term, err := ioutil.ReadAll(resp.Body)
+		currentTerm, err := ParseBodyForTerm(resp.Body)
 		if err != nil {
-			log.Printf("error parsing body for term %v", err)
+			TriggerTimeoutReset()
+			log.Printf("error getting the current term %v", err)
+			continue
 		}
-
-		currentTerm, _ := strconv.Atoi(string(term))
 
 		resp.Body.Close()
 
+		//request vote from all peers
+		logLength := db.GetLogLength()
 		for i := 0; i < len(peers); i++ {
 			//send vote request
-			var url string = "http://" + peers[i] + "/triggerVoteRequest?term=" + string(term)
-			log.Printf("triggering vote request from %v to url: %v", selfAddress, url)
+			var url string = "http://" + peers[i] + "/triggerVoteRequest?term=" + strconv.Itoa(currentTerm) + "&logLength=" + strconv.Itoa(logLength)
 
 			wg.Add(1)
 			go func(url string) {
@@ -102,24 +100,31 @@ func ElectionLoop(peers []string, numNodes int, selfAddress string) {
 			}(url)
 		}
 		wg.Wait()
+		//wait for replies from peers if on exit state has been set to follower then heartbeat was recieved
+		//so abandon the election
 		if EC.state == "FOLLOWER" {
 			TriggerTimeoutReset()
 			continue
 		}
-		log.Printf("num votes recieved is %d", numVotesRecieved)
+
+		//after election is over let all peers (including self) know that a new term has started
+		//this gives them a vote for the next election
 		clusterAddressArr := append(peers, selfAddress)
 		for i := 0; i < len(clusterAddressArr); i++ {
 			var url string = "http://" + clusterAddressArr[i] + "/triggerNextTerm?term=" + strconv.Itoa(currentTerm+1)
 			http.Get(url)
 		}
 
+		// if number of votes recieved is the majority of the number of nodes in the cluster
+		// then this node won the election, it becomes new leader and starts new goroutine to
+		// send heartbeats to its followers
 		if numVotesRecieved >= (numNodes/2)+1 {
-			log.Printf("replica at %v won the election", selfAddress)
-
-			go hearbeat.SendHeartbeats(peers)
+			log.Printf("node at %v has won the election!!!", selfAddress)
+			go hearbeat.SendHeartbeats(peers, true, selfAddress, EC.db)
 			break
 		}
 
+		// Did not win the election return to follower state and wait for heartbeats
 		TriggerTimeoutReset()
 
 	}
@@ -128,6 +133,26 @@ func ElectionLoop(peers []string, numNodes int, selfAddress string) {
 
 }
 
+// Function the parse the body of the a response for the current term
+func ParseBodyForTerm(r io.Reader) (currentTerm int, err error) {
+	term, err := ioutil.ReadAll(r)
+	if err != nil {
+		// log.Printf("error parsing body for term %v", err)
+		return -1, err
+	}
+
+	currentTerm, err = strconv.Atoi(string(term))
+	if err != nil {
+		return -1, err
+	}
+
+	return currentTerm, nil
+
+}
+
+// Upon recieving a heartbeat the election timeout is reset
+// this function gets called everytime the web server recieves a heartbeat
+// and resets the timeout to be a number between 150 - 300 milliseconds
 func TriggerTimeoutReset() {
 	EC.state = "FOLLOWER"
 	// log.Printf("node %v becomes %v", ad, EC.state)
@@ -140,10 +165,3 @@ func TriggerTimeoutReset() {
 
 	EC.tk.Reset(duration)
 }
-
-// func ReturnVotes(peers []string) {
-// 	for i := 0; i < len(peers); i++ {
-// 		var url string = "http://" + peers[i] + "/returnVote"
-// 		http.Get()
-// 	}
-// }

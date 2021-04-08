@@ -17,10 +17,10 @@ var theLog Log
 // Database is a open bold database
 type Database struct {
 	db       *bolt.DB
-	readOnly bool
-	theLog   Log
+	ReadOnly bool
+	TheLog   Log
 	mu       sync.Mutex
-	indexMap map[string]int
+	IndexMap map[string]int
 }
 
 type Command struct {
@@ -52,7 +52,7 @@ func NewDatabase(dbpath string, readOnly bool, replicaArr []string) (db *Databas
 		indexMap[replicaArr[i]] = 0
 	}
 
-	db = &Database{db: boltDatabase, readOnly: readOnly, theLog: theLog, indexMap: indexMap}
+	db = &Database{db: boltDatabase, ReadOnly: readOnly, TheLog: theLog, IndexMap: indexMap}
 	closeDB = boltDatabase.Close
 
 	createDefaultBucketError := db.CreateDefaultBucket()
@@ -66,7 +66,7 @@ func NewDatabase(dbpath string, readOnly bool, replicaArr []string) (db *Databas
 }
 
 func (d *Database) GetLog() Log {
-	return d.theLog
+	return d.TheLog
 }
 
 // CreateDefaultBucket creates theDefaultBucket
@@ -86,7 +86,7 @@ func (d *Database) CreateDefaultBucket() error {
 // it can return a rollback error if there is an error within the transaction
 // it can also return an error if put fails from within the transaction
 func (d *Database) SetKey(key string, value []byte) error {
-	if d.readOnly {
+	if d.ReadOnly {
 		return errors.New("Database is in read-only mode set keys in Master instead")
 	}
 
@@ -96,7 +96,7 @@ func (d *Database) SetKey(key string, value []byte) error {
 		Value: string(value),
 	}
 
-	d.theLog.Transcript = append(d.theLog.Transcript, *current)
+	d.TheLog.Transcript = append(d.TheLog.Transcript, *current)
 
 	rollbackError := d.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket(theDefaultBucket)
@@ -119,7 +119,7 @@ func (d *Database) SetKeyOnReplica(key string, value []byte) error {
 		Value: string(value),
 	}
 
-	d.theLog.Transcript = append(d.theLog.Transcript, *current)
+	d.TheLog.Transcript = append(d.TheLog.Transcript, *current)
 
 	rollbackError := d.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket(theDefaultBucket)
@@ -186,7 +186,7 @@ func (d *Database) DeleteReplicaKey(key string, value []byte) (err error) {
 }
 
 func (d *Database) DeleteKey(key string) (err error) {
-	if d.readOnly {
+	if d.ReadOnly {
 		return errors.New("Cannot delete from read-only database delete from Master instead")
 	}
 	current := &Command{
@@ -194,7 +194,7 @@ func (d *Database) DeleteKey(key string) (err error) {
 		Key:  key,
 	}
 
-	d.theLog.Transcript = append(d.theLog.Transcript, *current)
+	d.TheLog.Transcript = append(d.TheLog.Transcript, *current)
 
 	rollbackError := d.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket(theDefaultBucket)
@@ -216,7 +216,7 @@ func (d *Database) DeleteKeyOnReplica(key string) (err error) {
 		Key:  key,
 	}
 
-	d.theLog.Transcript = append(d.theLog.Transcript, *current)
+	d.TheLog.Transcript = append(d.TheLog.Transcript, *current)
 
 	rollbackError := d.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket(theDefaultBucket)
@@ -234,40 +234,40 @@ func (d *Database) DeleteKeyOnReplica(key string) (err error) {
 
 func (d *Database) ReadLog() {
 
-	for i := 0; i < len(d.theLog.Transcript); i++ {
-		log.Printf("command is %+v", d.theLog.Transcript[i])
+	for i := 0; i < len(d.TheLog.Transcript); i++ {
+		log.Printf("command is %+v", d.TheLog.Transcript[i])
 	}
 }
 
 func (d *Database) GetLogLength() int {
 
-	return len(d.theLog.Transcript)
+	return len(d.TheLog.Transcript)
 }
 
 func (d *Database) IncrementNextIndex(address string) error {
 	// d.mu.Lock()
 	d.mu.Lock()
-	index, present := d.indexMap[address]
+	index, present := d.IndexMap[address]
 	if !present {
 		return errors.New("address not found in index Map")
 
 	}
 
 	index++
-	d.indexMap[address] = index
+	d.IndexMap[address] = index
 	// d.mu.Unlock()
 	defer d.mu.Unlock()
 	return nil
 }
 
 func (d *Database) GetNextLogEntry(address string) (c Command, err error) {
-	if d.readOnly {
+	if d.ReadOnly {
 		return Command{}, errors.New("Cant read from slave Log")
 	}
 
-	log := d.theLog.Transcript
+	log := d.TheLog.Transcript
 	d.mu.Lock()
-	index := d.indexMap[address]
+	index := d.IndexMap[address]
 	d.mu.Unlock()
 	if index >= len(log) {
 		return Command{}, errors.New("No next Entry avaliable")
@@ -279,12 +279,12 @@ func (d *Database) GetNextLogEntry(address string) (c Command, err error) {
 
 func (d *Database) GetLogAt(index int) (c Command, err error) {
 	log.Println(index)
-	log.Println(d.theLog.Transcript)
-	if index > len(d.theLog.Transcript)-1 {
+	log.Println(d.TheLog.Transcript)
+	if index > len(d.TheLog.Transcript)-1 {
 		return Command{}, errors.New("invalid Index requested")
 	}
-	log.Printf("the command in db is %+v", d.theLog.Transcript[index])
-	return d.theLog.Transcript[index], nil
+	log.Printf("the command in db is %+v", d.TheLog.Transcript[index])
+	return d.TheLog.Transcript[index], nil
 
 }
 
