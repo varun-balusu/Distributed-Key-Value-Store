@@ -265,15 +265,16 @@ func (d *Database) GetNextLogEntry(address string) (c Command, err error) {
 		return Command{}, errors.New("Cant read from slave Log")
 	}
 
-	log := d.TheLog.Transcript
+	alog := d.TheLog.Transcript
 	d.mu.Lock()
 	index := d.IndexMap[address]
 	d.mu.Unlock()
-	if index >= len(log) {
+	if index >= len(alog) {
 		return Command{}, errors.New("No next Entry avaliable")
 	}
 
-	return log[index], nil
+	log.Printf("the next command for address %v is %+v", address, alog[index])
+	return alog[index], nil
 
 }
 

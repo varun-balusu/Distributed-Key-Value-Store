@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -15,10 +16,10 @@ type LeaderList struct {
 	LeaderAddresses []string
 }
 
-func SendHeartbeats(replicaArr []string, isnewLeader bool, leaderAddress string, db *db.Database) {
+func SendHeartbeats(replicaArr []string, isnewLeader bool, leaderAddress string, dba *db.Database) {
 
 	if isnewLeader {
-		err := InitLeader(leaderAddress, db, replicaArr)
+		err := InitLeader(leaderAddress, dba, replicaArr)
 		if err != nil {
 			log.Printf("error initializing the leader node %v", err)
 		}
@@ -59,7 +60,7 @@ func TriggerHeartbeat(address string) {
 	defer resp.Body.Close()
 }
 
-func InitLeader(leaderAddress string, db *db.Database, replicaArr []string) error {
+func InitLeader(leaderAddress string, dba *db.Database, replicaArr []string) error {
 	resp, err := http.Get("http://" + leaderAddress + "/getShardIndex")
 	if err != nil {
 		log.Printf("error getting shard index %v", err)
@@ -86,7 +87,7 @@ func InitLeader(leaderAddress string, db *db.Database, replicaArr []string) erro
 		log.Printf(leaders.LeaderAddresses[i])
 	}
 
-	db.ReadOnly = false
+	dba.ReadOnly = false
 	var wg sync.WaitGroup
 	log.Printf("lenght of the array is: %d", len(leaders.LeaderAddresses))
 	errHandler := errors.New("")
@@ -122,6 +123,34 @@ func InitLeader(leaderAddress string, db *db.Database, replicaArr []string) erro
 	wg.Wait()
 	if errHandler.Error() != "" {
 		return errHandler
+	}
+
+	//we also have to intialize a leader by updating its index map so it can correctly continue to
+	// replicate log entries to other replicas
+	for i := 0; i < len(replicaArr); i++ {
+
+		go func(address string, dba *db.Database) {
+			var url string = "http://" + address + "/getLogLength"
+			resp, err := http.Get(url)
+			if err != nil {
+				log.Printf("there was an error getting replica log length at url %v", url)
+			}
+			logLength, err := ioutil.ReadAll(resp.Body)
+			if err != nil {
+				log.Printf("error reading the body when getting log length %v", err)
+			}
+
+			logLengthAsNumber, _ := strconv.Atoi(string(logLength))
+
+			if logLengthAsNumber == 0 {
+				dba.IndexMap[address] = logLengthAsNumber
+				return
+			}
+
+			dba.IndexMap[address] = logLengthAsNumber - 1
+
+		}(replicaArr[i], dba)
+
 	}
 
 	return nil

@@ -5,7 +5,6 @@ import (
 	"distribkv/usr/distributedkv/db"
 	"encoding/json"
 	"errors"
-	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -43,12 +42,14 @@ func KeyDownloadLoop(dba *db.Database, masterAddress string, myAddress string) {
 				log.Printf("ending replication on server %v", myAddress)
 				break
 			} else {
-				log.Printf("my address is %v and my new leader is %v", myAddress, string(currentLeaderAddress))
+				masterAddress = string(currentLeaderAddress)
+				// log.Printf("my address is %v and my new leader is %v", myAddress, string(currentLeaderAddress))
 			}
+			// log.Printf("outside if-else the value of masterAddress is %v", masterAddress)
 			keyfound, err := GetNextLogEntry(dba, masterAddress, myAddress)
 
 			if err != nil {
-				log.Printf("my address from replication is %v", myAddress)
+				// log.Printf("my address from replication is %v", myAddress)
 				log.Printf("Error Getting next log entry: %v", err)
 
 				time.Sleep(time.Second * 2)
@@ -56,7 +57,7 @@ func KeyDownloadLoop(dba *db.Database, masterAddress string, myAddress string) {
 			}
 
 			if !keyfound {
-				log.Printf("my address from replication is %v", myAddress)
+				// log.Printf("my address from replication is %v", myAddress)
 				time.Sleep(time.Millisecond * 500)
 			}
 		}
@@ -98,20 +99,11 @@ func GetNextLogEntry(dba *db.Database, masterAddress string, myAddress string) (
 	if err != nil {
 		return false, err
 	}
+	// response, _ := ioutil.ReadAll(resp.Body)
 
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return false, err
-	}
-	if len(body) == 0 {
-		return false, nil
-	}
+	// log.Printf("the response body is %v", string(response))
 
 	if err := json.NewDecoder(resp.Body).Decode(&currentLogEntry); err != nil {
-		if err == io.EOF {
-			return false, nil
-		}
-
 		return false, err
 	}
 

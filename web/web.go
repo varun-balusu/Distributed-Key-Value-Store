@@ -310,13 +310,13 @@ func (s *Server) HandleGetNextLogEntry(res http.ResponseWriter, req *http.Reques
 
 	c, err := s.db.GetNextLogEntry(address)
 	enc := json.NewEncoder(res)
-
+	log.Printf("error is : %v", err)
 	enc.Encode(&replication.LogEntry{
 		Command: c,
 		Err:     err,
 	})
 
-	fmt.Fprintf(res, "Called GetNExtLogEntry and got command %+v and error: %v\n", c, err)
+	fmt.Fprintf(res, "Called GetNextLogEntry and got command %+v and error: %v\n", c, err)
 }
 
 func (s *Server) HandleDeleteExtraKeys(res http.ResponseWriter, req *http.Request) {

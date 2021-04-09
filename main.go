@@ -4,6 +4,7 @@ import (
 	"distribkv/usr/distributedkv/config"
 	"distribkv/usr/distributedkv/db"
 	"distribkv/usr/distributedkv/election"
+	"distribkv/usr/distributedkv/hearbeat"
 	"distribkv/usr/distributedkv/replication"
 	"distribkv/usr/distributedkv/resharder"
 	"distribkv/usr/distributedkv/web"
@@ -128,7 +129,7 @@ func main() {
 		go election.ElectionLoop(filteredAddresses, numNodes, *httpAddress, db)
 
 	} else {
-		// go hearbeat.SendHeartbeats(replicaMap[shardIndex], false, masterAddress, db)
+		go hearbeat.SendHeartbeats(replicaMap[shardIndex], false, masterAddress, db)
 	}
 
 	log.Printf("Current shard is %q and shard index is %v and total shard count is %v", *shard, shardIndex, shardCount)
