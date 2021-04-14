@@ -16,6 +16,8 @@ type LeaderList struct {
 	LeaderAddresses []string
 }
 
+// SendHeartbeats sends heartbeats to all replicas in the replicaArr every 50 milliseconds
+// if isnewLeader is set to true it will initialize a new leader if dba is not null
 func SendHeartbeats(replicaArr []string, isnewLeader bool, leaderAddress string, dba *db.Database) {
 
 	if isnewLeader {
@@ -41,6 +43,8 @@ func SendHeartbeats(replicaArr []string, isnewLeader bool, leaderAddress string,
 
 }
 
+// TriggerHeatbeat sends a request to requested address, by htting the triggetHeartbeat endpoint
+// this asserts the leaders authority by reseting the election timeouts on the server with specified address.
 func TriggerHeartbeat(address string) {
 	var url string = "http://" + address + "/triggerHeartbeat"
 
@@ -60,6 +64,10 @@ func TriggerHeartbeat(address string) {
 	defer resp.Body.Close()
 }
 
+// InitLeader gets called when a new leader wins an election. By initializing a new leader the leader address gets
+// sent to all current leaders including the elected leader. Each leader updates it address map to point at the newly
+// elected leader as leader of the shard cluster. The new leader also communicated with the replicas in its cluster to
+// update its log Index Map so it can correctly continue replicating to replicas.
 func InitLeader(leaderAddress string, dba *db.Database, replicaArr []string) error {
 	resp, err := http.Get("http://" + leaderAddress + "/getShardIndex")
 	if err != nil {
@@ -71,7 +79,7 @@ func InitLeader(leaderAddress string, dba *db.Database, replicaArr []string) err
 		log.Printf("error parsing body %v", err)
 		return err
 	}
-
+	resp.Body.Close()
 	log.Printf("shard index is %v", string(shardIndex))
 
 	var leaders LeaderList
@@ -81,7 +89,7 @@ func InitLeader(leaderAddress string, dba *db.Database, replicaArr []string) err
 		return err
 	}
 	json.NewDecoder(resp.Body).Decode(&leaders)
-
+	resp.Body.Close()
 	leaders.LeaderAddresses = append(leaders.LeaderAddresses, leaderAddress)
 	for i := 0; i < len(leaders.LeaderAddresses); i++ {
 		log.Printf(leaders.LeaderAddresses[i])
@@ -111,7 +119,7 @@ func InitLeader(leaderAddress string, dba *db.Database, replicaArr []string) err
 				errHandler = errors.New("error modifying the address map at url: " + url)
 				// log.Printf("uh-oh")
 			}
-
+			resp.Body.Close()
 			wg.Done()
 		}(url)
 
@@ -139,7 +147,7 @@ func InitLeader(leaderAddress string, dba *db.Database, replicaArr []string) err
 			if err != nil {
 				log.Printf("error reading the body when getting log length %v", err)
 			}
-
+			resp.Body.Close()
 			logLengthAsNumber, _ := strconv.Atoi(string(logLength))
 
 			if logLengthAsNumber == 0 {

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"distribkv/usr/distributedkv/commiter"
 	"distribkv/usr/distributedkv/config"
 	"distribkv/usr/distributedkv/db"
 	"distribkv/usr/distributedkv/election"
@@ -123,6 +124,7 @@ func main() {
 	if *replica {
 
 		go replication.KeyDownloadLoop(db, masterAddress, *httpAddress)
+		go commiter.ApplyLatestChangesLoop(db, masterAddress, *httpAddress)
 
 		filteredAddresses := filterOutAddress(replicaMap[shardIndex], *httpAddress)
 		numNodes := len(replicaMap[shardIndex]) + 1
@@ -176,6 +178,8 @@ func main() {
 	http.HandleFunc("/getLeadersList", srv.GetLeaderAddresses)
 
 	http.HandleFunc("/modifyAddressMap", srv.ModifyAddressMap)
+
+	http.HandleFunc("/confirmEntry", srv.HandleConfirmEntry)
 
 	http.HandleFunc("/getCurrentClusterLeader", srv.GetCurrentClusterLeader)
 

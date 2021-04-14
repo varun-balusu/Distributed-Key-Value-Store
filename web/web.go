@@ -21,9 +21,11 @@ type Server struct {
 	shardIndex  int
 	shardCount  int
 	addressMap  map[int]string
+	matchIndex  map[int]int
 	replicaArr  []string
 	numVotes    int
 	currentTerm int
+	commitIndex int
 	mu          sync.Mutex
 }
 
@@ -39,7 +41,9 @@ func NewServer(db *db.Database, shardIndex int, shardCount int, addressMap map[i
 		}
 	}
 
-	srv = &Server{db: db, shardIndex: shardIndex, shardCount: shardCount, addressMap: addressMap, replicaArr: replicaArr, numVotes: 1, currentTerm: 1}
+	matchIndex := make(map[int]int)
+
+	srv = &Server{db: db, shardIndex: shardIndex, shardCount: shardCount, addressMap: addressMap, replicaArr: replicaArr, numVotes: 1, currentTerm: 1, matchIndex: matchIndex, commitIndex: -1}
 
 	return srv
 }
@@ -276,6 +280,7 @@ func (s *Server) HandleTriggerVoteRequest(res http.ResponseWriter, req *http.Req
 	s.mu.Unlock()
 
 	if s.numVotes == 1 && term >= currentTerm && logLength >= s.db.GetLogLength() {
+		log.Printf("candidate log length is %d and my log length is %d", logLength, s.db.GetLogLength())
 		fmt.Fprintf(res, "ok")
 		s.mu.Lock()
 		s.numVotes = 0
@@ -302,6 +307,37 @@ func (s *Server) HandleIncrementNextIndex(res http.ResponseWriter, req *http.Req
 	} else {
 		fmt.Fprintf(res, "ok")
 	}
+}
+func (s *Server) HandleConfirmEntry(res http.ResponseWriter, req *http.Request) {
+	req.ParseForm()
+	//ingored error
+	latestIndex, _ := strconv.Atoi(req.Form.Get("latestIndex"))
+
+	s.mu.Lock()
+	prevIndex := s.commitIndex
+	s.matchIndex[latestIndex] = s.matchIndex[latestIndex] + 1
+
+	if s.matchIndex[latestIndex] >= (len(s.replicaArr)/2)+1 {
+		s.commitIndex = latestIndex
+
+		go func(startIndex int, endIndex int) {
+			if startIndex == -1 {
+				startIndex = 0
+			}
+			for i := startIndex; i <= endIndex; i++ {
+				theLog := s.db.TheLog
+				if i < len(theLog.Transcript) {
+					c := theLog.Transcript[i]
+					s.db.ExecuteSetCommand(c)
+				} else {
+					break
+				}
+			}
+		}(prevIndex, latestIndex)
+	}
+	highestCommitIndex := s.commitIndex
+	s.mu.Unlock()
+	fmt.Fprintf(res, strconv.Itoa(highestCommitIndex))
 }
 func (s *Server) HandleGetNextLogEntry(res http.ResponseWriter, req *http.Request) {
 	req.ParseForm()

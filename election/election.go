@@ -96,6 +96,7 @@ func ElectionLoop(peers []string, numNodes int, selfAddress string, db *db.Datab
 					numVotesRecieved++
 				}
 
+				defer resp.Body.Close()
 				wg.Done()
 			}(url)
 		}

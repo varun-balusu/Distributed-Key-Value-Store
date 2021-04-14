@@ -98,6 +98,26 @@ func (d *Database) SetKey(key string, value []byte) error {
 
 	d.TheLog.Transcript = append(d.TheLog.Transcript, *current)
 
+	// rollbackError := d.db.Update(func(tx *bolt.Tx) error {
+	// 	b := tx.Bucket(theDefaultBucket)
+	// 	putErr := b.Put([]byte(key), []byte(value))
+
+	// 	if putErr != nil {
+	// 		return putErr
+	// 	}
+
+	// 	return nil
+	// })
+	// return rollbackError
+
+	return nil
+
+}
+
+func (d *Database) ExecuteSetCommand(c Command) error {
+	key := c.Key
+	value := c.Value
+
 	rollbackError := d.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket(theDefaultBucket)
 		putErr := b.Put([]byte(key), []byte(value))
@@ -121,17 +141,17 @@ func (d *Database) SetKeyOnReplica(key string, value []byte) error {
 
 	d.TheLog.Transcript = append(d.TheLog.Transcript, *current)
 
-	rollbackError := d.db.Update(func(tx *bolt.Tx) error {
-		b := tx.Bucket(theDefaultBucket)
-		putErr := b.Put([]byte(key), []byte(value))
+	// rollbackError := d.db.Update(func(tx *bolt.Tx) error {
+	// 	b := tx.Bucket(theDefaultBucket)
+	// 	putErr := b.Put([]byte(key), []byte(value))
 
-		if putErr != nil {
-			return putErr
-		}
+	// 	if putErr != nil {
+	// 		return putErr
+	// 	}
 
-		return nil
-	})
-	return rollbackError
+	// 	return nil
+	// })
+	return nil
 
 }
 

@@ -9,8 +9,9 @@
 
 # done
 
-for key in {1..2000}
+
+for key in {0..750}
 do
-curl 'http://localhost:8080/set?key='$key'&value='$key
+curl 'http://127.0.0.1:8080/set?key='$key'&value='$key
 
 done
