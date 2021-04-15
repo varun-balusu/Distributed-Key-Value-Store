@@ -216,7 +216,24 @@ func (d *Database) DeleteKey(key string) (err error) {
 
 	d.TheLog.Transcript = append(d.TheLog.Transcript, *current)
 
-	rollbackError := d.db.Update(func(tx *bolt.Tx) error {
+	// rollbackError := d.db.Update(func(tx *bolt.Tx) error {
+	// 	b := tx.Bucket(theDefaultBucket)
+	// 	deleteError := b.Delete([]byte(key))
+
+	// 	if deleteError != nil {
+	// 		return deleteError
+	// 	}
+
+	// 	return nil
+	// })
+
+	return nil
+}
+
+func (d *Database) ExecuteDeleteCommand(c Command) (err error) {
+	key := c.Key
+
+	return d.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket(theDefaultBucket)
 		deleteError := b.Delete([]byte(key))
 
@@ -227,7 +244,6 @@ func (d *Database) DeleteKey(key string) (err error) {
 		return nil
 	})
 
-	return rollbackError
 }
 
 func (d *Database) DeleteKeyOnReplica(key string) (err error) {
@@ -238,18 +254,18 @@ func (d *Database) DeleteKeyOnReplica(key string) (err error) {
 
 	d.TheLog.Transcript = append(d.TheLog.Transcript, *current)
 
-	rollbackError := d.db.Update(func(tx *bolt.Tx) error {
-		b := tx.Bucket(theDefaultBucket)
-		deleteError := b.Delete([]byte(key))
+	// rollbackError := d.db.Update(func(tx *bolt.Tx) error {
+	// 	b := tx.Bucket(theDefaultBucket)
+	// 	deleteError := b.Delete([]byte(key))
 
-		if deleteError != nil {
-			return deleteError
-		}
+	// 	if deleteError != nil {
+	// 		return deleteError
+	// 	}
 
-		return nil
-	})
+	// 	return nil
+	// })
 
-	return rollbackError
+	return nil
 }
 
 func (d *Database) ReadLog() {

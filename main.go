@@ -137,10 +137,10 @@ func main() {
 	log.Printf("Current shard is %q and shard index is %v and total shard count is %v", *shard, shardIndex, shardCount)
 	var srv *web.Server
 	if !*replica {
-		srv = web.NewServer(db, shardIndex, shardCount, addressMap, replicaMap[shardIndex])
+		srv = web.NewServer(db, shardIndex, shardCount, addressMap, replicaMap[shardIndex], *httpAddress)
 	} else {
 		filteredAddresses := filterOutAddress(replicaMap[shardIndex], *httpAddress)
-		srv = web.NewServer(db, shardIndex, shardCount, addressMap, filteredAddresses)
+		srv = web.NewServer(db, shardIndex, shardCount, addressMap, filteredAddresses, *httpAddress)
 	}
 
 	http.HandleFunc("/get", srv.HandleGet)
@@ -184,5 +184,4 @@ func main() {
 	http.HandleFunc("/getCurrentClusterLeader", srv.GetCurrentClusterLeader)
 
 	log.Fatal(http.ListenAndServe(*httpAddress, nil))
-
 }

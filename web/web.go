@@ -26,6 +26,7 @@ type Server struct {
 	numVotes    int
 	currentTerm int
 	commitIndex int
+	myAddress   string
 	mu          sync.Mutex
 }
 
@@ -34,7 +35,7 @@ type ValueObject struct {
 }
 
 // NewServer is the constructer for thr Server
-func NewServer(db *db.Database, shardIndex int, shardCount int, addressMap map[int]string, replicaArr []string) (srv *Server) {
+func NewServer(db *db.Database, shardIndex int, shardCount int, addressMap map[int]string, replicaArr []string, myAddress string) (srv *Server) {
 	if replicaArr != nil {
 		for i := 0; i < len(replicaArr); i++ {
 			log.Printf("current shardIndex is %v and shard replica is at %v", shardIndex, replicaArr[i])
@@ -43,7 +44,7 @@ func NewServer(db *db.Database, shardIndex int, shardCount int, addressMap map[i
 
 	matchIndex := make(map[int]int)
 
-	srv = &Server{db: db, shardIndex: shardIndex, shardCount: shardCount, addressMap: addressMap, replicaArr: replicaArr, numVotes: 1, currentTerm: 1, matchIndex: matchIndex, commitIndex: -1}
+	srv = &Server{db: db, shardIndex: shardIndex, shardCount: shardCount, addressMap: addressMap, replicaArr: replicaArr, numVotes: 1, currentTerm: 1, matchIndex: matchIndex, commitIndex: -1, myAddress: myAddress}
 
 	return srv
 }
@@ -118,23 +119,46 @@ func (s *Server) GetCurrentClusterLeader(res http.ResponseWriter, req *http.Requ
 //apply chages to your address map by changing the shardIndex in the addres map to
 //be equal to the new eader address also call the endpoint for all the replicas in the replica arr
 func (s *Server) ModifyAddressMap(res http.ResponseWriter, req *http.Request) {
+	// log.Printf("modifty map  being called")
 	req.ParseForm()
 	// log.Println("iside of modify function")
 	shardIdx := req.Form.Get("shardIndex")
 	newLeader := req.Form.Get("newLeader")
 
 	shardIndex, _ := strconv.Atoi(shardIdx)
+	status := "ok"
+	// s.mu.Lock()
+	// s.addressMap[shardIndex] = newLeader
+	// s.mu.Unlock()
 
-	s.addressMap[shardIndex] = newLeader
-
-	if !s.db.ReadOnly {
+	if !s.db.ReadOnly && s.addressMap[shardIndex] != newLeader {
+		// log.Printf("my address is %v", s.myAddress)
 		for i := 0; i < len(s.replicaArr); i++ {
 			var url string = "http://" + s.replicaArr[i] + "/modifyAddressMap?shardIndex=" + string(shardIdx) + "&newLeader=" + newLeader
-			http.Get(url)
+
+			go func(url string, i int) {
+				// log.Printf("somehow got here on %d", i)
+				resp, err := http.Get(url)
+				if err != nil {
+					status = "bad"
+					// log.Printf("Error in web.go from ModifyAddressMap: %v", err)
+
+					return
+				}
+
+				resp.Body.Close()
+			}(url, i)
+			continue
 		}
+
 	}
 
-	fmt.Fprintf(res, "ok")
+	s.mu.Lock()
+	s.addressMap[shardIndex] = newLeader
+	s.mu.Unlock()
+
+	// log.Printf("modifty map  being exited")
+	fmt.Fprintf(res, status)
 
 }
 
@@ -201,7 +225,7 @@ func (s *Server) HandleDelete(res http.ResponseWriter, req *http.Request) {
 
 	shardIdx := int(hash.Sum64() % uint64(s.shardCount))
 
-	if shardIdx != s.shardIndex {
+	if shardIdx != s.shardIndex || s.db.ReadOnly {
 		s.redirectRequest(res, req, shardIdx)
 	} else {
 		err := s.db.DeleteKey(key)
@@ -236,6 +260,7 @@ func (s *Server) HandleFetchCurrentTerm(res http.ResponseWriter, req *http.Reque
 }
 
 func (s *Server) HandleTriggerNextTerm(res http.ResponseWriter, req *http.Request) {
+	// log.Printf("entered triggerNextTerm")
 	req.ParseForm()
 	nt := req.Form.Get("term")
 	nextTerm, err := strconv.Atoi(nt)
@@ -251,6 +276,7 @@ func (s *Server) HandleTriggerNextTerm(res http.ResponseWriter, req *http.Reques
 	s.currentTerm = nextTerm
 	s.numVotes = 1
 	s.mu.Unlock()
+	// log.Printf("my number of votes is %d", s.numVotes)
 	fmt.Fprintf(res, "%d", s.currentTerm)
 }
 
@@ -274,13 +300,14 @@ func (s *Server) HandleTriggerVoteRequest(res http.ResponseWriter, req *http.Req
 	term, _ := strconv.Atoi(req.Form.Get("term"))
 
 	logLength, _ := strconv.Atoi(req.Form.Get("logLength"))
+	log.Printf("my number of votes is from tirggerVoteRequest %d", s.numVotes)
 
 	s.mu.Lock()
 	currentTerm := s.currentTerm
 	s.mu.Unlock()
 
 	if s.numVotes == 1 && term >= currentTerm && logLength >= s.db.GetLogLength() {
-		log.Printf("candidate log length is %d and my log length is %d", logLength, s.db.GetLogLength())
+		// log.Printf("candidate log length is %d and my log length is %d", logLength, s.db.GetLogLength())
 		fmt.Fprintf(res, "ok")
 		s.mu.Lock()
 		s.numVotes = 0
@@ -317,7 +344,8 @@ func (s *Server) HandleConfirmEntry(res http.ResponseWriter, req *http.Request) 
 	prevIndex := s.commitIndex
 	s.matchIndex[latestIndex] = s.matchIndex[latestIndex] + 1
 
-	if s.matchIndex[latestIndex] >= (len(s.replicaArr)/2)+1 {
+	if s.matchIndex[latestIndex] == (len(s.replicaArr)/2)+1 {
+
 		s.commitIndex = latestIndex
 
 		go func(startIndex int, endIndex int) {
@@ -328,7 +356,11 @@ func (s *Server) HandleConfirmEntry(res http.ResponseWriter, req *http.Request) 
 				theLog := s.db.TheLog
 				if i < len(theLog.Transcript) {
 					c := theLog.Transcript[i]
-					s.db.ExecuteSetCommand(c)
+					if c.Type == "SET" {
+						s.db.ExecuteSetCommand(c)
+					} else {
+						s.db.ExecuteDeleteCommand(c)
+					}
 				} else {
 					break
 				}
@@ -346,7 +378,7 @@ func (s *Server) HandleGetNextLogEntry(res http.ResponseWriter, req *http.Reques
 
 	c, err := s.db.GetNextLogEntry(address)
 	enc := json.NewEncoder(res)
-	log.Printf("error is : %v", err)
+	// log.Printf("error is : %v", err)
 	enc.Encode(&replication.LogEntry{
 		Command: c,
 		Err:     err,

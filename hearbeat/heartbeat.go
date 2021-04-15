@@ -30,11 +30,19 @@ func SendHeartbeats(replicaArr []string, isnewLeader bool, leaderAddress string,
 
 	duration := time.Duration(50) * time.Millisecond
 
+	for i := 0; i < len(replicaArr); i++ {
+		log.Printf("my address is %v and im sending heartbeats to %v", leaderAddress, replicaArr[i])
+	}
+
 	tk := time.NewTicker(duration)
 	for range tk.C {
 
 		for i := 0; i < len(replicaArr); i++ {
-			TriggerHeartbeat(replicaArr[i])
+			err := TriggerHeartbeat(replicaArr[i])
+			if err != nil {
+				// log.Printf("Error sending heartbeats: %v", err)
+				// time.Sleep(time.Second * 2)
+			}
 		}
 
 	}
@@ -45,23 +53,27 @@ func SendHeartbeats(replicaArr []string, isnewLeader bool, leaderAddress string,
 
 // TriggerHeatbeat sends a request to requested address, by htting the triggetHeartbeat endpoint
 // this asserts the leaders authority by reseting the election timeouts on the server with specified address.
-func TriggerHeartbeat(address string) {
+func TriggerHeartbeat(address string) error {
 	var url string = "http://" + address + "/triggerHeartbeat"
 
 	resp, err := http.Get(url)
 	if err != nil {
-		log.Printf("error sending heartbeats: %v", err)
+		// log.Printf("error sending heartbeats: %v", err)
+		return err
 	}
 
 	status, err := ioutil.ReadAll(resp.Body)
 
 	if err != nil {
-		log.Printf("error parsing body: %v", err)
+		// log.Printf("error parsing body: %v", err)
+		return err
 	} else if string(status) == "ok" {
 		// log.Printf("got ack from replica with status: %v", string(status))
 	}
 
-	defer resp.Body.Close()
+	resp.Body.Close()
+
+	return nil
 }
 
 // InitLeader gets called when a new leader wins an election. By initializing a new leader the leader address gets
@@ -109,6 +121,8 @@ func InitLeader(leaderAddress string, dba *db.Database, replicaArr []string) err
 			resp, err := http.Get(url)
 			if err != nil {
 				errHandler = err
+				wg.Done()
+				return
 			}
 
 			status, err := ioutil.ReadAll(resp.Body)
@@ -129,23 +143,27 @@ func InitLeader(leaderAddress string, dba *db.Database, replicaArr []string) err
 		// }
 	}
 	wg.Wait()
+	log.Printf("done with modify loop")
 	if errHandler.Error() != "" {
 		return errHandler
+		// log.Printf(errHandler.Error())
 	}
 
 	//we also have to intialize a leader by updating its index map so it can correctly continue to
 	// replicate log entries to other replicas
 	for i := 0; i < len(replicaArr); i++ {
-
+		// if replicaArr[i] != "127.0.0.3:8080" {
 		go func(address string, dba *db.Database) {
 			var url string = "http://" + address + "/getLogLength"
 			resp, err := http.Get(url)
 			if err != nil {
 				log.Printf("there was an error getting replica log length at url %v", url)
+				return
 			}
 			logLength, err := ioutil.ReadAll(resp.Body)
 			if err != nil {
 				log.Printf("error reading the body when getting log length %v", err)
+				return
 			}
 			resp.Body.Close()
 			logLengthAsNumber, _ := strconv.Atoi(string(logLength))
@@ -158,6 +176,7 @@ func InitLeader(leaderAddress string, dba *db.Database, replicaArr []string) err
 			dba.IndexMap[address] = logLengthAsNumber - 1
 
 		}(replicaArr[i], dba)
+		// }
 
 	}
 

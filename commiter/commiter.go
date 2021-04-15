@@ -33,6 +33,8 @@ func ApplyLatestChangesLoop(dba *db.Database, masterAddress string, myAddress st
 
 		err = FindAndApplyLatestCommits(dba, masterAddress, myAddress, CM)
 
+		time.Sleep(time.Millisecond * 800)
+
 		if err != nil {
 			time.Sleep(time.Second * 2)
 		}
@@ -72,7 +74,11 @@ func FindAndApplyLatestCommits(dba *db.Database, masterAddress string, myAddress
 				theLog := dba.TheLog
 				if i < len(theLog.Transcript) {
 					c := theLog.Transcript[i]
-					dba.ExecuteSetCommand(c)
+					if c.Type == "SET" {
+						dba.ExecuteSetCommand(c)
+					} else {
+						dba.ExecuteDeleteCommand(c)
+					}
 				} else {
 					break
 				}
